@@ -1,0 +1,294 @@
+// Bomba IoT "plantar / desactivar" — ESP32 (ESP-IDF) + Adafruit IO (MQTT sobre TLS)
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "mqtt_client.h"
+#include "esp_crt_bundle.h"
+#include "driver/gpio.h"
+#include "led_strip.h"
+#include "config.h"  // copia config.example.h -> config.h (no se sube a git)
+
+// ---------- Pines ----------
+#define PIN_ARMAR       GPIO_NUM_18  // botón rojo a GND
+#define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
+#define PIN_BUZZER      GPIO_NUM_23  // buzzer activo
+#define PIN_LEDS        GPIO_NUM_16  // DIN de la tira WS2812
+#define NUM_LEDS        8
+
+// ---------- Tiempos (ms) ----------
+#define T_PLANTAR_MS      3000
+#define T_BOMBA_MS        40000
+#define T_DESACTIVAR_MS   5000
+#define T_REBOTE_MS       30
+#define T_ENTRE_ENVIOS_MS 2200  // Adafruit IO gratis: máx 30 msg/min
+
+#define TOPIC(feed) AIO_USERNAME "/feeds/" feed
+
+static const char *TAG = "bomba";
+
+typedef enum { ESPERA, PLANTADA, DESACTIVADA, EXPLOTO } estado_t;
+static const char *NOMBRE[] = {"espera", "plantada", "desactivada", "exploto"};
+typedef enum { CMD_ARMAR, CMD_REINICIAR } comando_t;
+
+static esp_mqtt_client_handle_t mqtt;
+static volatile bool mqtt_conectado = false;
+static QueueHandle_t cola_cmd;  // comandos de la nube -> tarea del juego
+static led_strip_handle_t leds;
+
+// Estado del juego (solo lo toca el bucle principal)
+static estado_t estado;
+static int64_t t_estado, t_ultimo_bip, buzzer_hasta;
+static int tiempo_s, progreso;
+static bool estado_pendiente;
+
+static int64_t ahora_ms(void) { return esp_timer_get_time() / 1000; }
+
+// ======================= Red =======================
+static void wifi_evento(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW(TAG, "WiFi caido, reintentando");
+        esp_wifi_connect();
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        ESP_LOGI(TAG, "WiFi conectado");
+    }
+}
+
+static void wifi_iniciar(void)
+{
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_evento, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_evento, NULL));
+    wifi_config_t wc = {.sta = {.ssid = WIFI_SSID, .password = WIFI_PASS}};
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+static void mqtt_evento(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    esp_mqtt_event_handle_t e = data;
+    switch ((esp_mqtt_event_id_t)id) {
+    case MQTT_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "MQTT conectado");
+        esp_mqtt_client_subscribe_single(mqtt, TOPIC("bomba-cmd"), 0);
+        mqtt_conectado = true;
+        break;
+    case MQTT_EVENT_DISCONNECTED:
+        ESP_LOGW(TAG, "MQTT desconectado (reintenta solo)");
+        mqtt_conectado = false;
+        break;
+    case MQTT_EVENT_DATA: {
+        comando_t c;
+        if (e->data_len == 5 && !memcmp(e->data, "armar", 5)) c = CMD_ARMAR;
+        else if (e->data_len == 9 && !memcmp(e->data, "reiniciar", 9)) c = CMD_REINICIAR;
+        else break;  // cualquier otro valor se ignora (p. ej. el "release" del botón)
+        xQueueSend(cola_cmd, &c, 0);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void mqtt_iniciar(void)
+{
+    esp_mqtt_client_config_t cfg = {
+        .broker.address.uri = "mqtts://" AIO_SERVER ":8883",
+        .broker.verification.crt_bundle_attach = esp_crt_bundle_attach,  // verifica el certificado del servidor
+        .credentials.username = AIO_USERNAME,
+        .credentials.authentication.password = AIO_KEY,
+    };
+    mqtt = esp_mqtt_client_init(&cfg);
+    ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt, ESP_EVENT_ANY_ID, mqtt_evento, NULL));
+    ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt));
+}
+
+// Encola sin bloquear; la tarea MQTT lo envía. Devuelve true si se aceptó.
+static bool publicar(const char *topic, const char *valor, int qos)
+{
+    return esp_mqtt_client_enqueue(mqtt, topic, valor, 0, qos, 0, true) >= 0;
+}
+
+// Un mensaje cada T_ENTRE_ENVIOS_MS como máximo. Prioridad: estado > progreso > tiempo.
+static void telemetria(int64_t t)
+{
+    static int64_t t_envio = -T_ENTRE_ENVIOS_MS;
+    static int tiempo_env = -1, progreso_env = -1;
+    static bool estaba_conectado = false;
+    char v[8];
+
+    if (!mqtt_conectado) { estaba_conectado = false; return; }
+    if (!estaba_conectado) {  // tras (re)conectar, reenviar todo
+        estaba_conectado = true;
+        estado_pendiente = true;
+        tiempo_env = progreso_env = -1;
+    }
+    if (t - t_envio < T_ENTRE_ENVIOS_MS) return;
+
+    if (estado_pendiente) {
+        if (!publicar(TOPIC("bomba-estado"), NOMBRE[estado], 1)) return;
+        estado_pendiente = false;
+    } else if (progreso != progreso_env) {
+        snprintf(v, sizeof v, "%d", progreso);
+        if (!publicar(TOPIC("bomba-progreso"), v, 0)) return;
+        progreso_env = progreso;
+    } else if (tiempo_s != tiempo_env) {
+        snprintf(v, sizeof v, "%d", tiempo_s);
+        if (!publicar(TOPIC("bomba-tiempo"), v, 0)) return;
+        tiempo_env = tiempo_s;
+    } else {
+        return;
+    }
+    t_envio = t;
+}
+
+// ======================= Juego =======================
+typedef struct {
+    gpio_num_t pin;
+    bool presionado, lectura;
+    int64_t t_cambio, t_inicio;
+} boton_t;
+
+// ms que lleva presionado (0 = suelto), con antirrebote
+static int64_t ms_presionado(boton_t *b, int64_t t)
+{
+    bool l = gpio_get_level(b->pin) == 0;
+    if (l != b->lectura) { b->lectura = l; b->t_cambio = t; }
+    if (t - b->t_cambio >= T_REBOTE_MS && l != b->presionado) { b->presionado = l; b->t_inicio = t; }
+    return b->presionado ? t - b->t_inicio + 1 : 0;
+}
+
+static void cambiar_estado(estado_t e, int64_t t)
+{
+    estado = e;
+    t_estado = t;
+    estado_pendiente = true;
+    ESP_LOGI(TAG, "EVT,%lld,%s", t, NOMBRE[e]);  // log CSV para las pruebas
+    switch (e) {
+    case ESPERA:      tiempo_s = T_BOMBA_MS / 1000; progreso = 0; break;
+    case PLANTADA:    t_ultimo_bip = t; buzzer_hasta = t + 300; break;
+    case DESACTIVADA: progreso = 100; buzzer_hasta = t + 600; break;
+    case EXPLOTO:     tiempo_s = 0; progreso = 0; buzzer_hasta = t + 2000; break;
+    }
+}
+
+static void juego_paso(int64_t t, int64_t armar, int64_t desact)
+{
+    comando_t c;
+    while (xQueueReceive(cola_cmd, &c, 0)) {
+        ESP_LOGI(TAG, "CMD,%lld,%s", t, c == CMD_ARMAR ? "armar" : "reiniciar");
+        if (c == CMD_REINICIAR) cambiar_estado(ESPERA, t);
+        else if (estado != PLANTADA) cambiar_estado(PLANTADA, t);
+    }
+
+    switch (estado) {
+    case ESPERA:
+        if (armar >= T_PLANTAR_MS) cambiar_estado(PLANTADA, t);
+        break;
+    case PLANTADA: {
+        int64_t transcurrido = t - t_estado;
+        // solo cuenta lo presionado después de plantar (evita dejarlo apretado desde antes)
+        int64_t d = desact < transcurrido ? desact : transcurrido;
+        int64_t restante = T_BOMBA_MS - transcurrido;
+        if (d >= T_DESACTIVAR_MS) { cambiar_estado(DESACTIVADA, t); break; }
+        if (restante <= 0) { cambiar_estado(EXPLOTO, t); break; }
+        progreso = d * 100 / T_DESACTIVAR_MS;  // soltar el botón lo regresa a 0
+        tiempo_s = (restante + 999) / 1000;
+        int64_t intervalo = 100 + restante * 900 / T_BOMBA_MS;  // bip cada 1 s -> 0.1 s
+        if (t - t_ultimo_bip >= intervalo) { t_ultimo_bip = t; buzzer_hasta = t + 50; }
+        break;
+    }
+    default:  // DESACTIVADA / EXPLOTO: el botón armar reinicia
+        if (armar) cambiar_estado(ESPERA, t);
+    }
+}
+
+static void llenar(int n, uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < NUM_LEDS; i++) {
+        if (i < n) led_strip_set_pixel(leds, i, r, g, b);
+        else led_strip_set_pixel(leds, i, 0, 0, 0);
+    }
+}
+
+static void dibujar(int64_t t, int64_t armar)
+{
+    switch (estado) {
+    case ESPERA:  // naranja = progreso de plantado; 1 verde = lista
+        if (armar) llenar(armar * NUM_LEDS / T_PLANTAR_MS, 50, 20, 0);
+        else llenar(1, 0, 15, 0);
+        break;
+    case PLANTADA:  // azul = progreso de desactivación; rojo = tiempo restante
+        if (progreso) llenar(progreso * NUM_LEDS / 100, 0, 0, 60);
+        else llenar((tiempo_s * NUM_LEDS + T_BOMBA_MS / 1000 - 1) / (T_BOMBA_MS / 1000),
+                    t < buzzer_hasta ? 80 : 15, 0, 0);
+        break;
+    case DESACTIVADA:
+        llenar(NUM_LEDS, 0, 60, 0);
+        break;
+    case EXPLOTO:  // destello 3 s, luego rojo fijo
+        if (t - t_estado < 3000 && (t / 100) % 2) llenar(NUM_LEDS, 60, 60, 60);
+        else llenar(NUM_LEDS, 80, 0, 0);
+        break;
+    }
+    led_strip_refresh(leds);
+}
+
+void app_main(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
+    gpio_config_t entradas = {
+        .pin_bit_mask = (1ULL << PIN_ARMAR) | (1ULL << PIN_DESACTIVAR),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&entradas));
+    gpio_config_t salida = {.pin_bit_mask = 1ULL << PIN_BUZZER, .mode = GPIO_MODE_OUTPUT};
+    ESP_ERROR_CHECK(gpio_config(&salida));
+
+    led_strip_config_t sc = {
+        .strip_gpio_num = PIN_LEDS,
+        .max_leds = NUM_LEDS,
+        .led_pixel_format = LED_PIXEL_FORMAT_GRB,
+        .led_model = LED_MODEL_WS2812,
+    };
+    led_strip_rmt_config_t rc = {.clk_src = RMT_CLK_SRC_DEFAULT, .resolution_hz = 10 * 1000 * 1000};
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&sc, &rc, &leds));
+
+    cola_cmd = xQueueCreate(4, sizeof(comando_t));
+    wifi_iniciar();
+    mqtt_iniciar();  // la red corre en sus propias tareas: el juego funciona aunque no haya internet
+
+    boton_t b_armar = {.pin = PIN_ARMAR}, b_desact = {.pin = PIN_DESACTIVAR};
+    cambiar_estado(ESPERA, ahora_ms());
+    while (1) {
+        int64_t t = ahora_ms();
+        int64_t armar = ms_presionado(&b_armar, t);
+        int64_t desact = ms_presionado(&b_desact, t);
+        juego_paso(t, armar, desact);
+        gpio_set_level(PIN_BUZZER, t < buzzer_hasta);
+        dibujar(t, armar);
+        telemetria(t);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
