@@ -12,15 +12,22 @@
 #include "mqtt_client.h"
 #include "esp_crt_bundle.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "led_strip.h"
+#include "oled.h"
 #include "config.h"  // copia config.example.h -> config.h (no se sube a git)
 
 // ---------- Pines ----------
 #define PIN_ARMAR       GPIO_NUM_18  // botón rojo a GND
 #define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
 #define PIN_BUZZER      GPIO_NUM_23  // buzzer activo
-#define PIN_LEDS        GPIO_NUM_16  // DIN de la tira WS2812
+#define PIN_LEDS        GPIO_NUM_16  // DIN de la tira WS2812 (RX2)
 #define NUM_LEDS        8
+#define PIN_LED_ROJO    GPIO_NUM_25  // LED rojo + 220 ohm
+#define PIN_LED_VERDE   GPIO_NUM_26  // LED verde + 220 ohm (PWM: brilla más conforme se desactiva)
+#define PIN_SDA         GPIO_NUM_21  // OLED
+#define PIN_SCL         GPIO_NUM_22  // OLED
+#define OLED_GIRAR      false        // ponlo en true si el texto se ve de cabeza
 
 // ---------- Tiempos (ms) ----------
 #define T_PLANTAR_MS      3000
@@ -248,6 +255,59 @@ static void dibujar(int64_t t, int64_t armar)
     led_strip_refresh(leds);
 }
 
+// LED rojo: parpadea con cada bip; LED verde: sube de brillo con el progreso de desactivación
+static void indicadores(int64_t t)
+{
+    bool rojo = false;
+    int verde = 0;  // 0-255
+    switch (estado) {
+    case PLANTADA:    rojo = t < buzzer_hasta; verde = progreso * progreso * 255 / 10000; break;  // al cuadrado: el ojo lo ve lineal
+    case DESACTIVADA: verde = 255; break;
+    case EXPLOTO:     rojo = t - t_estado >= 3000 || (t / 100) % 2; break;
+    default: break;
+    }
+    gpio_set_level(PIN_LED_ROJO, rojo);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, verde);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static void pantalla(int64_t t, int64_t armar)
+{
+    static int64_t t_pantalla;
+    if (t - t_pantalla < 100) return;  // 10 cuadros/s; cada envío por I2C tarda ~25 ms
+    t_pantalla = t;
+    char s[24];
+    oled_limpiar();
+    oled_texto(0, 0, 1, NOMBRE[estado]);
+    oled_texto(104, 0, 1, mqtt_conectado ? "NUBE" : "----");
+    switch (estado) {
+    case ESPERA:
+        if (armar) {
+            oled_texto_centrado(18, 2, "PLANTANDO");
+            oled_barra(44, armar * 100 / T_PLANTAR_MS);
+        } else {
+            oled_texto_centrado(18, 3, "LISTA");
+            oled_texto_centrado(52, 1, "MANTEN EL ROJO");
+        }
+        break;
+    case PLANTADA:
+        snprintf(s, sizeof s, "%d:%02d", tiempo_s / 60, tiempo_s % 60);
+        oled_texto_centrado(14, 4, s);
+        if (progreso) oled_barra(50, progreso);
+        else oled_texto_centrado(52, 1, "MANTEN EL VERDE");
+        break;
+    case DESACTIVADA:
+        oled_texto_centrado(18, 3, "A SALVO");
+        oled_texto_centrado(52, 1, "ROJO: OTRA RONDA");
+        break;
+    case EXPLOTO:
+        oled_texto_centrado(18, 3, "BOOM!");
+        oled_texto_centrado(52, 1, "ROJO: OTRA RONDA");
+        break;
+    }
+    oled_mostrar();
+}
+
 void app_main(void)
 {
     esp_err_t err = nvs_flash_init();
@@ -263,8 +323,27 @@ void app_main(void)
         .pull_up_en = GPIO_PULLUP_ENABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&entradas));
-    gpio_config_t salida = {.pin_bit_mask = 1ULL << PIN_BUZZER, .mode = GPIO_MODE_OUTPUT};
+    gpio_config_t salida = {.pin_bit_mask = (1ULL << PIN_BUZZER) | (1ULL << PIN_LED_ROJO), .mode = GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&salida));
+
+    ledc_timer_config_t lt = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_8_BIT,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&lt));
+    ledc_channel_config_t lc = {
+        .gpio_num = PIN_LED_VERDE,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&lc));
+
+    oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR);  // si no hay pantalla, solo avisa en el log
 
     led_strip_config_t sc = {
         .strip_gpio_num = PIN_LEDS,
@@ -288,6 +367,8 @@ void app_main(void)
         juego_paso(t, armar, desact);
         gpio_set_level(PIN_BUZZER, t < buzzer_hasta);
         dibujar(t, armar);
+        indicadores(t);
+        pantalla(t, armar);
         telemetria(t);
         vTaskDelay(pdMS_TO_TICKS(10));
     }

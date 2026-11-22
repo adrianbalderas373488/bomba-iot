@@ -5,6 +5,7 @@ Una "bomba" de juego (para airsoft, gotcha o team building) hecha con un ESP32.
 - Empieza una cuenta regresiva de **40 s**. El buzzer pita cada vez más rápido.
 - El otro equipo la **desactiva** manteniendo el botón verde **5 s**. Si lo suelta, el progreso regresa a 0.
 - La tira de LEDs muestra el progreso: naranja al plantar, rojo con el tiempo restante y azul al desactivar.
+- La pantalla OLED muestra la cuenta regresiva y la barra de progreso. El LED rojo parpadea con cada bip y el verde brilla más conforme se desactiva.
 - El ESP32 publica el estado, el tiempo y el progreso en **Adafruit IO por MQTT sobre TLS**. Así un árbitro sigue la partida en vivo desde el celular o la PC, arma o reinicia la bomba a distancia y tiene el historial de las rondas.
 
 ## Arquitectura
@@ -14,7 +15,8 @@ flowchart LR
   subgraph ESP32["ESP32 (ESP-IDF, FreeRTOS)"]
     BTN[Botones ARMAR / DESACTIVAR] --> GAME[Máquina de estados<br/>bucle 10 ms]
     GAME --> LED[Tira WS2812 x8]
-    GAME --> BUZ[Buzzer]
+    GAME --> BUZ[Buzzer y LEDs rojo/verde]
+    GAME --> OLED[OLED SSD1306<br/>I2C]
     GAME -- "cola (no bloquea)" --> MQTTC[Cliente esp-mqtt<br/>tarea propia]
     MQTTC -- cola de comandos --> GAME
   end
@@ -47,20 +49,31 @@ flowchart LR
 | Botón pulsador grande (rojo) | 1 | ARMAR |
 | Botón pulsador grande (verde) | 1 | DESACTIVAR |
 | Buzzer **activo** de 5 V o 3.3 V | 1 | Suena solo con darle voltaje |
-| Resistencia de 330 Ω | 1 | En serie con el DIN de los LEDs |
-| Protoboard, jumpers y power bank USB | — | |
-| (Opcional) caja, cinta, "dinamita" de cartón | — | Para la estética |
+| Pantalla OLED SSD1306 0.96" 128x64, I2C (4 pines) | 1 | Tiempo, estado y progreso |
+| LED rojo y LED verde de 5 mm | 2 | Rojo: bip; verde: progreso de desactivación |
+| Resistencia de 220 Ω | 2 | Una por LED |
+| Resistencia de 330 Ω | 1 | En serie con el DIN de la tira |
+| 2 protoboards, jumpers, cables dupont macho-hembra de 20 cm, power bank USB | — | |
+| Caja de cartón, cinta, tubos para la "dinamita" | — | Carcasa |
 
 ## Conexiones
 
-| ESP32 | Va a |
-|---|---|
-| GPIO18 | Botón rojo → GND (usa pull-up interno, no lleva resistencia) |
-| GPIO19 | Botón verde → GND |
-| GPIO23 | Buzzer (+). El (−) va a GND |
-| GPIO16 | 330 Ω → DIN de la tira WS2812 |
-| VIN (5 V) | 5V de la tira |
-| GND | GND de la tira, botones y buzzer (tierra común) |
+Diagrama interactivo, con el montaje en la caja de cartón: [`docs/conexiones.html`](docs/conexiones.html). Ábrelo en el navegador.
+
+| ESP32 (texto en la placa) | GPIO | Va a |
+|---|---|---|
+| D18 | 18 | Botón rojo → riel − (usa pull-up interno, no lleva resistencia) |
+| D19 | 19 | Botón verde → riel − |
+| D23 | 23 | Buzzer (+); el (−) al riel − |
+| RX2 | 16 | 330 Ω → DIN de la tira WS2812 |
+| D22 / D21 | 22 / 21 | SCL / SDA de la OLED |
+| D25 | 25 | 220 Ω → LED rojo (pata larga); pata corta al riel − |
+| D26 | 26 | 220 Ω → LED verde (pata larga); pata corta al riel − |
+| 3V3 | — | Riel + derecho → VCC de la OLED |
+| VIN (5 V) | — | 5V de la tira |
+| GND (los dos) | — | Rieles − (tierra común) |
+
+Si la OLED muestra el texto de cabeza, cambia `OLED_GIRAR` a `true` en `main/main.c`. Si no hay pantalla conectada, la bomba funciona igual y solo lo avisa en el monitor serie.
 
 ## Compilar y flashear
 

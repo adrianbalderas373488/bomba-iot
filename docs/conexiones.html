@@ -2,90 +2,100 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
-/* Layout: una columna; diagrama grande arriba, pasos clicables que resaltan cables, tabla para encontrar pines */
+/* Layout: una columna; plano de protoboards grande, pasos clicables que resaltan cables, tabla de pines y vista del panel de cartón */
 :root {
   --bg: #f4f5f2; --panel: #ffffff; --ink: #1c201e; --muted: #5a605c; --line: #dcdfd8;
   --board: #fbfaf5; --board-edge: #d6d3c6; --hole: #9a978a; --esp: #1e3a56; --esp-ink: #e6edf3; --pin: #b59b52;
-  --gnd: #1f1f1f; --accent: #0a6f6a;
+  --gnd: #1f1f1f; --accent: #0a6f6a; --carton: #c9a36b; --carton-edge: #9c7a46;
   --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121513; --panel: #1a1e1c; --ink: #e8ebe7; --muted: #a2a8a3; --line: #2e332f;
   --board: #262823; --board-edge: #3b3e37; --hole: #6f7068; --esp: #2a5074; --esp-ink: #e6edf3; --pin: #c9b06a;
-  --gnd: #d4d4d4; --accent: #4cc2bb; color-scheme: dark } }
+  --gnd: #d4d4d4; --accent: #4cc2bb; --carton: #8a6c40; --carton-edge: #b48f59; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121513; --panel: #1a1e1c; --ink: #e8ebe7; --muted: #a2a8a3; --line: #2e332f;
   --board: #262823; --board-edge: #3b3e37; --hole: #6f7068; --esp: #2a5074; --esp-ink: #e6edf3; --pin: #c9b06a;
-  --gnd: #d4d4d4; --accent: #4cc2bb; color-scheme: dark }
+  --gnd: #d4d4d4; --accent: #4cc2bb; --carton: #8a6c40; --carton-edge: #b48f59; color-scheme: dark }
 body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
-main { max-width: 1120px; margin: 0 auto; padding-block: 28px 48px;
+main { max-width: 1180px; margin: 0 auto; padding-block: 28px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   display: grid; gap: 24px; }
 h1 { font-size: 1.7rem; margin: 0; text-wrap: balance; font-weight: 600; }
-h2 { font-size: 1.1rem; margin: 0 0 10px; font-weight: 600; }
-p { margin: 0; max-width: 68ch; }
+h2 { font-size: 1.1rem; margin: 0 0 10px; font-weight: 600; text-wrap: balance; }
+p { margin: 0; max-width: 70ch; }
 .muted { color: var(--muted); }
-code, .mono { font-family: var(--mono); font-size: .92em; }
+.mono { font-family: var(--mono); font-size: .92em; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
 .orient { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
 .orient span { white-space: nowrap; }
 .scroll { overflow-x: auto; }
-svg#plano { display: block; width: 100%; min-width: 760px; height: auto; }
+svg { display: block; width: 100%; height: auto; }
+#plano { min-width: 820px; }
+#caja { min-width: 560px; }
 .board { fill: var(--board); stroke: var(--board-edge); }
 .hole { fill: var(--hole); }
 .pinlabel { font: 600 12px var(--mono); fill: var(--esp-ink); }
 .lbl { font: 500 13px var(--sans); fill: var(--ink); }
 .lbl-s { font: 500 11.5px var(--sans); fill: var(--muted); }
+.tag { font: 600 11.5px var(--mono); fill: var(--ink); }
+.pill { fill: var(--panel); stroke-width: 2; }
 .wire { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
 .end { stroke: var(--panel); stroke-width: 1.5; }
+.gnd { stroke: var(--gnd); }
+.gndf { fill: var(--gnd); }
 [data-step] { transition: opacity .2s; }
-svg.focusing [data-step]:not(.on) { opacity: .15; }
-.steps { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; counter-reset: s; }
+svg.focusing [data-step]:not(.on) { opacity: .12; }
+.steps { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
 .steps button { width: 100%; text-align: left; font: inherit; color: inherit; background: none;
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; cursor: pointer;
-  display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+  display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }
 .steps button:hover { border-color: var(--accent); }
 .steps button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .steps button[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .num { font: 600 14px var(--mono); color: var(--accent); }
 .steps b { font-weight: 600; }
-.steps small { display: block; color: var(--muted); font-size: .9em; margin-top: 2px; }
-.sw { display: inline-block; width: 22px; height: 5px; border-radius: 3px; vertical-align: middle; margin: 0 4px 2px 0; }
+.steps small { display: block; color: var(--muted); font-size: .9em; margin-top: 3px; line-height: 1.6; }
+.sw { display: inline-block; width: 20px; height: 5px; border-radius: 3px; vertical-align: middle; margin: 0 5px 2px 0; }
 .grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
-@media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
 table { border-collapse: collapse; width: 100%; font-size: .95em; }
-th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-weight: 600; color: var(--muted); font-size: .85em; text-transform: uppercase; letter-spacing: .04em; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: .8em; text-transform: uppercase; letter-spacing: .05em; }
 td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .note { border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; }
-ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 @media (prefers-reduced-motion: reduce) { [data-step] { transition: none; } }
 </style>
 
 <main>
   <header>
     <h1>Conexiones de la bomba</h1>
-    <p class="muted">ESP32 DevKit (30 pines) montado entre dos protoboards. Toca un paso para ver solo sus cables.</p>
+    <p class="muted">ESP32 DevKit de 30 pines entre dos protoboards, con buzzer, 2 botones, 2 LEDs, pantalla OLED y tira de 8 LEDs. Toca un paso para ver solo sus cables.</p>
     <div class="orient">
-      <span><b>Antena</b> (la parte con zigzag) hacia arriba</span>
+      <span><b>Antena</b> (zigzag) hacia arriba</span>
       <span><b>USB</b> hacia abajo</span>
       <span><b>Chip</b> mirando hacia ti</span>
     </div>
   </header>
 
   <section class="panel scroll" aria-label="Diagrama de conexiones">
-    <svg id="plano" viewBox="0 0 1080 710" role="img" aria-label="Diagrama del ESP32 entre dos protoboards con buzzer, dos botones y tira de LEDs">
+    <svg id="plano" viewBox="-200 -150 1280 870" role="img" aria-label="ESP32 entre dos protoboards con todos los componentes conectados">
       <rect class="board" x="40" y="90" width="320" height="406" rx="8"/>
       <rect class="board" x="540" y="90" width="320" height="406" rx="8"/>
       <text class="lbl-s" x="200" y="80" text-anchor="middle">Protoboard izquierda</text>
       <text class="lbl-s" x="700" y="80" text-anchor="middle">Protoboard derecha</text>
       <g id="holes"></g>
+      <line x1="60" y1="100" x2="60" y2="486" stroke="#2f6fd6" stroke-width="1.5"/>
+      <line x1="82" y1="100" x2="82" y2="486" stroke="#d63a2f" stroke-width="1.5"/>
       <line x1="818" y1="100" x2="818" y2="486" stroke="#d63a2f" stroke-width="1.5"/>
       <line x1="840" y1="100" x2="840" y2="486" stroke="#2f6fd6" stroke-width="1.5"/>
-      <text x="818" y="102" text-anchor="middle" class="lbl-s" fill="#d63a2f" style="fill:#d63a2f">+</text>
-      <text x="840" y="102" text-anchor="middle" class="lbl-s" style="fill:#2f6fd6">−</text>
+      <text x="60" y="102" text-anchor="middle" style="font:600 13px var(--sans);fill:#2f6fd6">−</text>
+      <text x="82" y="102" text-anchor="middle" style="font:600 13px var(--sans);fill:#d63a2f">+</text>
+      <text x="818" y="102" text-anchor="middle" style="font:600 13px var(--sans);fill:#d63a2f">+</text>
+      <text x="840" y="102" text-anchor="middle" style="font:600 13px var(--sans);fill:#2f6fd6">−</text>
 
-      <!-- ESP32 -->
+      <!-- 1. ESP32 -->
       <g data-step="1">
         <rect x="350" y="96" width="200" height="404" rx="6" fill="var(--esp)"/>
         <path d="M380 104h10v18h10v-18h10v18h10v-18h10v18h10v-18h10v18h10v-18h10v18h10v-18h10" fill="none" stroke="var(--pin)" stroke-width="2"/>
@@ -97,61 +107,111 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
         <g id="pins"></g>
       </g>
 
-      <!-- Paso 2: GND derecho al riel azul -->
+      <!-- 2. Rieles -->
       <g data-step="2">
-        <path class="wire" d="M648 436H840" style="stroke:var(--gnd)"/>
-        <circle class="end" cx="648" cy="436" r="5" style="fill:var(--gnd)"/><circle class="end" cx="840" cy="436" r="5" style="fill:var(--gnd)"/>
+        <path class="wire gnd" d="M648 436H840"/>
+        <path class="wire" d="M648 458H818" stroke="#c2410c"/>
+        <path class="wire gnd" d="M252 436H60"/>
+        <circle class="end gndf" cx="648" cy="436" r="5"/><circle class="end gndf" cx="840" cy="436" r="5"/>
+        <circle class="end" cx="648" cy="458" r="5" fill="#c2410c"/><circle class="end" cx="818" cy="458" r="5" fill="#c2410c"/>
+        <circle class="end gndf" cx="252" cy="436" r="5"/><circle class="end gndf" cx="60" cy="436" r="5"/>
       </g>
 
-      <!-- Paso 3: buzzer -->
+      <!-- 3. Buzzer -->
       <g data-step="3">
         <path class="wire" d="M648 150H900" stroke="#7b4fd6"/>
-        <path class="wire" d="M900 186H840" style="stroke:var(--gnd)"/>
-        <circle class="end" cx="648" cy="150" r="5" fill="#7b4fd6"/><circle class="end" cx="840" cy="186" r="5" style="fill:var(--gnd)"/>
+        <path class="wire gnd" d="M900 186H840"/>
+        <circle class="end" cx="648" cy="150" r="5" fill="#7b4fd6"/><circle class="end gndf" cx="840" cy="186" r="5"/>
         <path d="M900 150H922M900 186H922" stroke="#888" stroke-width="2"/>
         <circle cx="940" cy="168" r="22" fill="#222"/><circle cx="940" cy="168" r="5" fill="#555"/>
-        <text x="914" y="143" class="lbl-s">+</text><text x="914" y="203" class="lbl-s">−</text>
+        <text x="912" y="143" class="lbl-s">+</text><text x="912" y="203" class="lbl-s">−</text>
         <text x="972" y="172" class="lbl">Buzzer</text>
       </g>
 
-      <!-- Paso 4: botón verde -->
+      <!-- 4. Botón verde -->
       <g data-step="4">
         <path class="wire" d="M648 260H900" stroke="#1f9d55"/>
-        <path class="wire" d="M900 232H840" style="stroke:var(--gnd)"/>
-        <circle class="end" cx="648" cy="260" r="5" fill="#1f9d55"/><circle class="end" cx="840" cy="232" r="5" style="fill:var(--gnd)"/>
+        <path class="wire gnd" d="M900 232H840"/>
+        <circle class="end" cx="648" cy="260" r="5" fill="#1f9d55"/><circle class="end gndf" cx="840" cy="232" r="5"/>
         <path d="M900 232H920M900 260H920" stroke="#888" stroke-width="2"/>
         <rect x="920" y="222" width="40" height="48" rx="4" fill="#3a3a3a"/><circle cx="940" cy="246" r="14" fill="#2fbf6a"/>
         <text x="972" y="250" class="lbl">Botón verde</text>
       </g>
 
-      <!-- Paso 5: botón rojo -->
+      <!-- 5. Botón rojo -->
       <g data-step="5">
         <path class="wire" d="M648 282H900" stroke="#e86a10"/>
-        <path class="wire" d="M900 318H840" style="stroke:var(--gnd)"/>
-        <circle class="end" cx="648" cy="282" r="5" fill="#e86a10"/><circle class="end" cx="840" cy="318" r="5" style="fill:var(--gnd)"/>
+        <path class="wire gnd" d="M900 318H840"/>
+        <circle class="end" cx="648" cy="282" r="5" fill="#e86a10"/><circle class="end gndf" cx="840" cy="318" r="5"/>
         <path d="M900 282H920M900 318H920" stroke="#888" stroke-width="2"/>
         <rect x="920" y="276" width="40" height="52" rx="4" fill="#3a3a3a"/><circle cx="940" cy="302" r="14" fill="#e0372b"/>
         <text x="972" y="306" class="lbl">Botón rojo</text>
       </g>
 
-      <!-- Paso 6: tira LED -->
+      <!-- 6. LEDs rojo y verde -->
       <g data-step="6">
+        <path class="wire" d="M252 304H230V249H-60" stroke="#a21caf"/>
+        <path class="wire" d="M252 326H230V381H-60" stroke="#4d7c0f"/>
+        <path class="wire gnd" d="M-90 262V282H60"/>
+        <path class="wire gnd" d="M-90 394V414H60"/>
+        <circle class="end" cx="252" cy="304" r="5" fill="#a21caf"/><circle class="end" cx="252" cy="326" r="5" fill="#4d7c0f"/>
+        <circle class="end gndf" cx="60" cy="282" r="5"/><circle class="end gndf" cx="60" cy="414" r="5"/>
+        <rect x="-32" y="242" width="34" height="14" rx="6" fill="#d9c9a3" stroke="#a8956a"/>
+        <rect x="-24" y="242" width="4" height="14" fill="#c0392b"/><rect x="-16" y="242" width="4" height="14" fill="#c0392b"/><rect x="-8" y="242" width="4" height="14" fill="#5b3a1a"/>
+        <rect x="-32" y="374" width="34" height="14" rx="6" fill="#d9c9a3" stroke="#a8956a"/>
+        <rect x="-24" y="374" width="4" height="14" fill="#c0392b"/><rect x="-16" y="374" width="4" height="14" fill="#c0392b"/><rect x="-8" y="374" width="4" height="14" fill="#5b3a1a"/>
+        <text x="-15" y="234" text-anchor="middle" class="lbl-s">220 Ω</text>
+        <text x="-15" y="366" text-anchor="middle" class="lbl-s">220 Ω</text>
+        <path d="M-77 249H-60M-77 381H-60" stroke="#888" stroke-width="2"/>
+        <circle cx="-90" cy="249" r="13" fill="#e0372b"/><circle cx="-90" cy="381" r="13" fill="#2fbf6a"/>
+        <text x="-70" y="240" class="lbl-s">+</text><text x="-70" y="372" class="lbl-s">+</text>
+        <text x="-112" y="253" text-anchor="end" class="lbl">LED rojo</text>
+        <text x="-112" y="385" text-anchor="end" class="lbl">LED verde</text>
+      </g>
+
+      <!-- 7. OLED -->
+      <g data-step="7">
+        <path class="wire" d="M648 172H700" stroke="#0891b2"/>
+        <path class="wire" d="M648 238H700" stroke="#db2777"/>
+        <circle class="end" cx="648" cy="172" r="5" fill="#0891b2"/><circle class="end" cx="648" cy="238" r="5" fill="#db2777"/>
+        <rect class="pill" x="700" y="162" width="104" height="20" rx="10" stroke="#0891b2"/><text class="tag" x="752" y="176" text-anchor="middle">OLED SCL</text>
+        <rect class="pill" x="700" y="228" width="104" height="20" rx="10" stroke="#db2777"/><text class="tag" x="752" y="242" text-anchor="middle">OLED SDA</text>
+        <rect x="880" y="-136" width="180" height="116" rx="6" fill="#1d3f8f"/>
+        <rect x="930" y="-122" width="118" height="88" rx="2" fill="#0b0f14"/>
+        <text x="989" y="-84" text-anchor="middle" style="font:600 14px var(--mono);fill:#8fd3ff">0:37</text>
+        <text x="989" y="-62" text-anchor="middle" style="font:500 10px var(--mono);fill:#8fd3ff">OLED 128x64</text>
+        <text x="896" y="-106" class="tag" style="fill:#e6edf3">GND</text>
+        <text x="896" y="-84" class="tag" style="fill:#e6edf3">VCC</text>
+        <text x="896" y="-62" class="tag" style="fill:#e6edf3">SCL</text>
+        <text x="896" y="-40" class="tag" style="fill:#e6edf3">SDA</text>
+        <path class="wire gnd" d="M886 -110H862"/>
+        <path class="wire" d="M886 -88H862" stroke="#c2410c"/>
+        <path class="wire" d="M886 -66H862" stroke="#0891b2"/>
+        <path class="wire" d="M886 -44H862" stroke="#db2777"/>
+        <rect class="pill" x="740" y="-120" width="122" height="20" rx="10" style="stroke:var(--gnd)"/><text class="tag" x="801" y="-106" text-anchor="middle">riel − derecho</text>
+        <rect class="pill" x="740" y="-98" width="122" height="20" rx="10" stroke="#c2410c"/><text class="tag" x="801" y="-84" text-anchor="middle">riel + derecho</text>
+        <rect class="pill" x="740" y="-76" width="122" height="20" rx="10" stroke="#0891b2"/><text class="tag" x="801" y="-62" text-anchor="middle">D22</text>
+        <rect class="pill" x="740" y="-54" width="122" height="20" rx="10" stroke="#db2777"/><text class="tag" x="801" y="-40" text-anchor="middle">D21</text>
+      </g>
+
+      <!-- 8. Tira LED -->
+      <g data-step="8">
         <path class="wire" d="M648 348H866V588H690V615H712" stroke="#e0a100"/>
         <rect x="856" y="450" width="20" height="54" rx="6" fill="#d9c9a3" stroke="#a8956a"/>
-        <rect x="856" y="462" width="20" height="4" fill="#8b5a2b"/><rect x="856" y="472" width="20" height="4" fill="#8b5a2b"/><rect x="856" y="482" width="20" height="4" fill="#5b3a1a"/>
+        <rect x="856" y="462" width="20" height="4" fill="#e67e22"/><rect x="856" y="472" width="20" height="4" fill="#e67e22"/><rect x="856" y="482" width="20" height="4" fill="#5b3a1a"/>
         <text x="884" y="482" class="lbl">330 Ω</text>
         <path class="wire" d="M252 458V640H712" stroke="#d63a2f"/>
-        <path class="wire" d="M252 436H238V665H712" style="stroke:var(--gnd)"/>
+        <path class="wire gnd" d="M60 480V665H712"/>
         <circle class="end" cx="648" cy="348" r="5" fill="#e0a100"/>
         <circle class="end" cx="252" cy="458" r="5" fill="#d63a2f"/>
-        <circle class="end" cx="252" cy="436" r="5" style="fill:var(--gnd)"/>
+        <circle class="end gndf" cx="60" cy="480" r="5"/>
         <rect x="700" y="596" width="300" height="88" rx="6" fill="#2b2b2b"/>
         <circle cx="712" cy="615" r="5" fill="#d8b45a"/><circle cx="712" cy="640" r="5" fill="#d8b45a"/><circle cx="712" cy="665" r="5" fill="#d8b45a"/>
         <text x="722" y="619" style="font:600 11px var(--mono);fill:#eee">DIN</text>
         <text x="722" y="644" style="font:600 11px var(--mono);fill:#eee">5V</text>
         <text x="722" y="669" style="font:600 11px var(--mono);fill:#eee">GND</text>
         <g id="leds"></g>
-        <text x="850" y="702" text-anchor="middle" class="lbl-s">Tira WS2812B (8 LEDs)</text>
+        <text x="850" y="704" text-anchor="middle" class="lbl-s">Tira WS2812B (8 LEDs)</text>
       </g>
     </svg>
   </section>
@@ -160,12 +220,14 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
     <section class="panel">
       <h2>Pasos</h2>
       <ol class="steps" id="steps">
-        <li><button data-s="1" aria-pressed="false"><span class="num">1</span><span><b>Coloca el ESP32</b> con la antena arriba y el USB abajo. Cada fila de pines queda en una protoboard.<small>Los huecos de la misma fila horizontal, en el mismo lado de la protoboard, están conectados entre sí. Por eso cada cable va en la fila del pin, no en el pin.</small></span></button></li>
-        <li><button data-s="2" aria-pressed="false"><span class="num">2</span><span><span class="sw" style="background:var(--gnd)"></span><b>GND (derecho) → riel azul (−)</b> de la protoboard derecha.<small>Pin 14 de arriba hacia abajo, del lado derecho. Todos los "−" de los componentes van a este riel.</small></span></button></li>
-        <li><button data-s="3" aria-pressed="false"><span class="num">3</span><span><span class="sw" style="background:#7b4fd6"></span><b>D23 → pata + del buzzer</b>; la pata − al riel azul.<small>La pata + es la más larga, o la que tiene "+" en la etiqueta.</small></span></button></li>
-        <li><button data-s="4" aria-pressed="false"><span class="num">4</span><span><span class="sw" style="background:#1f9d55"></span><b>D19 → botón verde</b>; la otra pata al riel azul.<small>Si tu botón tiene 4 patas, usa dos en diagonal y ya funciona.</small></span></button></li>
-        <li><button data-s="5" aria-pressed="false"><span class="num">5</span><span><span class="sw" style="background:#e86a10"></span><b>D18 → botón rojo</b>; la otra pata al riel azul.<small>Igual que el verde: dos patas en diagonal.</small></span></button></li>
-        <li><button data-s="6" aria-pressed="false"><span class="num">6</span><span><b>Tira de LEDs</b>, 3 cables:<small><span class="sw" style="background:#e0a100"></span>RX2 → resistencia 330 Ω → DIN<br><span class="sw" style="background:#d63a2f"></span>VIN (izquierdo, último pin) → 5V<br><span class="sw" style="background:var(--gnd)"></span>GND (izquierdo) → GND<br>La resistencia no tiene lado. En la tira, usa la punta que dice DIN, no DOUT.</small></span></button></li>
+        <li><button data-s="1" aria-pressed="false"><span class="num">1</span><span><b>Coloca el ESP32</b> con la antena arriba. Cada fila de pines queda en una protoboard.<small>Los huecos de la misma fila horizontal, en el mismo lado de la protoboard, están conectados entre sí. Cada cable va en la fila del pin.</small></span></button></li>
+        <li><button data-s="2" aria-pressed="false"><span class="num">2</span><span><b>Alimenta los rieles</b> (3 cables)<small><span class="sw" style="background:var(--gnd)"></span>GND derecho → riel − derecho<br><span class="sw" style="background:#c2410c"></span>3V3 → riel + derecho<br><span class="sw" style="background:var(--gnd)"></span>GND izquierdo → riel − izquierdo</small></span></button></li>
+        <li><button data-s="3" aria-pressed="false"><span class="num">3</span><span><span class="sw" style="background:#7b4fd6"></span><b>Buzzer:</b> D23 → pata +; pata − → riel −<small>La pata + es la más larga, o la que tiene "+".</small></span></button></li>
+        <li><button data-s="4" aria-pressed="false"><span class="num">4</span><span><span class="sw" style="background:#1f9d55"></span><b>Botón verde:</b> D19 → una pata; la otra → riel −<small>Si tiene 4 patas, usa dos en diagonal.</small></span></button></li>
+        <li><button data-s="5" aria-pressed="false"><span class="num">5</span><span><span class="sw" style="background:#e86a10"></span><b>Botón rojo:</b> D18 → una pata; la otra → riel −<small>También dos patas en diagonal.</small></span></button></li>
+        <li><button data-s="6" aria-pressed="false"><span class="num">6</span><span><b>LEDs rojo y verde</b> (lado izquierdo)<small><span class="sw" style="background:#a21caf"></span>D25 → resistencia 220 Ω → pata larga del LED rojo<br><span class="sw" style="background:#4d7c0f"></span>D26 → resistencia 220 Ω → pata larga del LED verde<br><span class="sw" style="background:var(--gnd)"></span>Pata corta de cada LED → riel − izquierdo<br>El rojo parpadea con cada bip. El verde brilla más conforme desactivas.</small></span></button></li>
+        <li><button data-s="7" aria-pressed="false"><span class="num">7</span><span><b>Pantalla OLED</b> (4 cables, sigue los colores)<small><span class="sw" style="background:var(--gnd)"></span>GND → riel − derecho<br><span class="sw" style="background:#c2410c"></span>VCC → riel + derecho (3.3 V)<br><span class="sw" style="background:#0891b2"></span>SCL → D22<br><span class="sw" style="background:#db2777"></span>SDA → D21<br>Lee los nombres impresos en tu pantalla: en algunas el orden es VCC, GND.</small></span></button></li>
+        <li><button data-s="8" aria-pressed="false"><span class="num">8</span><span><b>Tira de LEDs</b> (3 cables)<small><span class="sw" style="background:#e0a100"></span>RX2 → resistencia 330 Ω → DIN<br><span class="sw" style="background:#d63a2f"></span>VIN (izquierdo, último pin) → 5V<br><span class="sw" style="background:var(--gnd)"></span>riel − izquierdo → GND<br>Usa la punta de la tira que dice DIN, no DOUT.</small></span></button></li>
       </ol>
     </section>
 
@@ -175,31 +237,72 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
         <p class="muted" style="margin-bottom:8px">Busca el texto impreso junto al pin. Si no se lee, cuenta desde arriba (desde la antena).</p>
         <div class="scroll">
           <table>
-            <thead><tr><th>Para</th><th>Texto en la placa</th><th>Lado</th><th>Nº desde arriba</th></tr></thead>
+            <thead><tr><th>Para</th><th>Texto</th><th>Lado</th><th>Nº</th></tr></thead>
             <tbody>
               <tr><td>Buzzer +</td><td class="mono">D23</td><td>derecho</td><td class="n">1</td></tr>
+              <tr><td>OLED SCL</td><td class="mono">D22</td><td>derecho</td><td class="n">2</td></tr>
+              <tr><td>OLED SDA</td><td class="mono">D21</td><td>derecho</td><td class="n">5</td></tr>
               <tr><td>Botón verde</td><td class="mono">D19</td><td>derecho</td><td class="n">6</td></tr>
               <tr><td>Botón rojo</td><td class="mono">D18</td><td>derecho</td><td class="n">7</td></tr>
-              <tr><td>Datos LEDs</td><td class="mono">RX2</td><td>derecho</td><td class="n">10</td></tr>
-              <tr><td>Tierra (riel −)</td><td class="mono">GND</td><td>derecho</td><td class="n">14</td></tr>
-              <tr><td>GND de la tira</td><td class="mono">GND</td><td>izquierdo</td><td class="n">14</td></tr>
-              <tr><td>5V de la tira</td><td class="mono">VIN</td><td>izquierdo</td><td class="n">15 (último)</td></tr>
+              <tr><td>Datos de la tira</td><td class="mono">RX2</td><td>derecho</td><td class="n">10</td></tr>
+              <tr><td>Riel − derecho</td><td class="mono">GND</td><td>derecho</td><td class="n">14</td></tr>
+              <tr><td>Riel + derecho</td><td class="mono">3V3</td><td>derecho</td><td class="n">15</td></tr>
+              <tr><td>LED rojo</td><td class="mono">D25</td><td>izquierdo</td><td class="n">8</td></tr>
+              <tr><td>LED verde</td><td class="mono">D26</td><td>izquierdo</td><td class="n">9</td></tr>
+              <tr><td>Riel − izquierdo</td><td class="mono">GND</td><td>izquierdo</td><td class="n">14</td></tr>
+              <tr><td>5V de la tira</td><td class="mono">VIN</td><td>izquierdo</td><td class="n">15</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-      <p class="note"><b>RX2 es el GPIO16</b>, el que usa el código para los LEDs. En algunas placas viene impreso como <span class="mono">G16</span> o <span class="mono">16</span>. Si tu placa tiene <b>38 pines</b>, cambia el número desde arriba pero no el texto: guíate por el texto.</p>
+      <p class="note"><b>RX2 es el GPIO16.</b> En algunas placas dice <span class="mono">G16</span> o <span class="mono">16</span>, y D21 puede decir <span class="mono">G21</span>. Si tu placa tiene 38 pines, guíate por el texto y no por el número.</p>
       <div>
         <h2>Antes de conectar el USB</h2>
         <ul class="tips">
           <li>Ningún cable va de 3V3 o VIN directo a GND.</li>
-          <li>Hay solo un cable en cada hueco.</li>
-          <li>Si el riel de tu protoboard está cortado a la mitad (una línea interrumpida), usa la mitad de arriba o pon un puente.</li>
-          <li>Prueba el buzzer: conectado directo a 3V3 y GND debe sonar solo. Si no suena, es pasivo y no sirve con este código.</li>
+          <li>La OLED va a 3.3 V (riel +), no a VIN.</li>
+          <li>Los dos rieles − (izquierdo y derecho) son tierra; no los cruces con los rieles +.</li>
+          <li>Si el riel de tu protoboard está cortado a la mitad, usa la mitad de arriba o pon un puente.</li>
+          <li>Prueba el buzzer: directo a 3V3 y GND debe sonar solo. Si no suena, es pasivo.</li>
         </ul>
       </div>
     </section>
   </div>
+
+  <section class="panel">
+    <h2>Montaje en la caja de cartón</h2>
+    <p class="muted" style="margin-bottom:12px">Usa una caja de zapatos o similar. Las protoboards, el ESP32 y el power bank van adentro; en la tapa solo asoman la pantalla, las luces y los botones.</p>
+    <div class="scroll">
+      <svg id="caja" viewBox="0 0 760 470" role="img" aria-label="Vista frontal de la tapa de la caja con la posición de cada componente">
+        <rect x="70" y="40" width="620" height="390" rx="10" fill="var(--carton)" stroke="var(--carton-edge)" stroke-width="3"/>
+        <g>
+          <rect x="18" y="70" width="44" height="330" rx="20" fill="#b3261e"/><rect x="18" y="140" width="44" height="14" fill="#2b2b2b"/><rect x="18" y="320" width="44" height="14" fill="#2b2b2b"/>
+          <rect x="698" y="70" width="44" height="330" rx="20" fill="#b3261e"/><rect x="698" y="140" width="44" height="14" fill="#2b2b2b"/><rect x="698" y="320" width="44" height="14" fill="#2b2b2b"/>
+          <text x="40" y="452" text-anchor="middle" class="lbl-s">"dinamita"</text><text x="720" y="452" text-anchor="middle" class="lbl-s">"dinamita"</text>
+        </g>
+        <rect x="300" y="70" width="160" height="92" rx="4" fill="#0b0f14" stroke="#555" stroke-width="2"/>
+        <text x="380" y="122" text-anchor="middle" style="font:600 26px var(--mono);fill:#8fd3ff">0:37</text>
+        <text x="380" y="180" text-anchor="middle" class="lbl">Ventana para la OLED</text>
+        <g id="tira-caja"></g>
+        <text x="380" y="242" text-anchor="middle" class="lbl">Ranura para la tira de LEDs</text>
+        <circle cx="330" cy="280" r="11" fill="#e0372b" stroke="#7a1d18" stroke-width="2"/><text x="330" y="312" text-anchor="middle" class="lbl-s">LED rojo</text>
+        <circle cx="430" cy="280" r="11" fill="#2fbf6a" stroke="#155f35" stroke-width="2"/><text x="430" y="312" text-anchor="middle" class="lbl-s">LED verde</text>
+        <circle cx="230" cy="370" r="30" fill="#e0372b" stroke="#7a1d18" stroke-width="3"/><text x="230" y="418" text-anchor="middle" class="lbl">PLANTAR</text>
+        <circle cx="530" cy="370" r="30" fill="#2fbf6a" stroke="#155f35" stroke-width="3"/><text x="530" y="418" text-anchor="middle" class="lbl">DESACTIVAR</text>
+        <g fill="#3b2a14"><circle cx="600" cy="90" r="3"/><circle cx="612" cy="90" r="3"/><circle cx="624" cy="90" r="3"/><circle cx="600" cy="102" r="3"/><circle cx="612" cy="102" r="3"/><circle cx="624" cy="102" r="3"/><circle cx="600" cy="114" r="3"/><circle cx="612" cy="114" r="3"/><circle cx="624" cy="114" r="3"/></g>
+        <text x="612" y="140" text-anchor="middle" class="lbl-s">agujeros del buzzer</text>
+        <text x="110" y="100" class="lbl-s">hueco lateral</text><text x="110" y="116" class="lbl-s">para el USB →</text>
+      </svg>
+    </div>
+    <ol class="tips" style="margin-top:14px">
+      <li>Primero arma y prueba todo en la mesa con el diagrama de arriba. Mete todo a la caja solo cuando ya funcione.</li>
+      <li>Marca los agujeros en la tapa con lápiz, poniendo cada pieza encima, y córtalos con cúter un poco más chicos para que entren apretados.</li>
+      <li>Para lo que va en la tapa (botones, LEDs, OLED, tira, buzzer) usa cables dupont macho-hembra de 20 cm. Así no tienes que soldar y alcanzan de la tapa a la protoboard.</li>
+      <li>Pega la OLED y la tira por dentro con cinta doble cara o silicón frío, nunca con silicón caliente directo sobre los pines.</li>
+      <li>Deja un hueco lateral para el cable USB: así puedes cargar programa nuevo y alimentar la bomba con el power bank sin abrir la caja.</li>
+      <li>La "dinamita" puede ser de tubos de papel de baño pintados de rojo, con cinta negra y cables de colores sueltos de adorno (que no lleguen a la protoboard).</li>
+    </ol>
+  </section>
 </main>
 
 <script>
@@ -211,20 +314,20 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
     parent.appendChild(e); return e;
   }
   var holes = document.getElementById("holes");
-  var leftCols = [60, 82, 120, 142, 164, 186, 208, 252, 274, 296, 318, 340];
-  var rightCols = [560, 582, 604, 626, 648, 692, 714, 736, 758, 780, 818, 840];
+  var cols = [60, 82, 120, 142, 164, 186, 208, 252, 274, 296, 318, 340, 560, 582, 604, 626, 648, 692, 714, 736, 758, 780, 818, 840];
   for (var r = -2; r <= 15; r++) {
-    var y = 150 + 22 * r;
-    leftCols.concat(rightCols).forEach(function (x) { el("circle", {cx: x, cy: y, r: 3.6, "class": "hole"}, holes); });
+    cols.forEach(function (x) { el("circle", {cx: x, cy: 150 + 22 * r, r: 3.6, "class": "hole"}, holes); });
   }
   var izq = ["EN","VP","VN","D34","D35","D32","D33","D25","D26","D27","D14","D12","D13","GND","VIN"];
   var der = ["D23","D22","TX0","RX0","D21","D19","D18","D5","TX2","RX2","D4","D2","D15","GND","3V3"];
-  var usados = {"D23":"#7b4fd6","D19":"#1f9d55","D18":"#e86a10","RX2":"#e0a100","GND":"var(--gnd)","VIN":"#d63a2f"};
+  var usadosDer = {"D23":"#7b4fd6","D22":"#0891b2","D21":"#db2777","D19":"#1f9d55","D18":"#e86a10","RX2":"#e0a100","GND":"var(--gnd)","3V3":"#c2410c"};
+  var usadosIzq = {"D25":"#a21caf","D26":"#4d7c0f","GND":"var(--gnd)","VIN":"#d63a2f"};
   var pins = document.getElementById("pins");
   function pin(x, y, name, right) {
     el("rect", {x: x - 5, y: y - 5, width: 10, height: 10, rx: 2, fill: "var(--pin)"}, pins);
+    var color = (right ? usadosDer : usadosIzq)[name];
     var tx = right ? 540 : 360;
-    if (usados[name]) el("rect", {x: right ? tx - 40 : tx - 4, y: y - 9, width: 44, height: 18, rx: 4, fill: "none", stroke: usados[name], "stroke-width": 2}, pins);
+    if (color) el("rect", {x: right ? tx - 40 : tx - 4, y: y - 9, width: 44, height: 18, rx: 4, fill: "none", stroke: color, "stroke-width": 2}, pins);
     var t = el("text", {x: tx, y: y + 4, "class": "pinlabel", "text-anchor": right ? "end" : "start"}, pins);
     t.textContent = name;
   }
@@ -233,10 +336,12 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
     pin(560, 150 + 22 * i, der[i], true);
   }
   var leds = document.getElementById("leds");
+  var tiraCaja = document.getElementById("tira-caja");
   for (var j = 0; j < 8; j++) {
     var x = 772 + j * 27;
     el("rect", {x: x, y: 626, width: 20, height: 20, rx: 3, fill: "#f2f2f2"}, leds);
     el("circle", {cx: x + 10, cy: 636, r: 5, fill: "#ffb36b"}, leds);
+    el("circle", {cx: 282 + j * 28, cy: 214, r: 9, fill: j < 5 ? "#e0372b" : "#4a2320", stroke: "#2b2b2b", "stroke-width": 2}, tiraCaja);
   }
 
   var svg = document.getElementById("plano");
@@ -247,7 +352,7 @@ ul.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
     activo = (activo === s) ? null : s;
     svg.classList.toggle("focusing", activo !== null);
     // el ESP32 (paso 1) siempre queda visible como referencia
-    groups.forEach(function (g) { g.classList.toggle("on", g.getAttribute("data-step") === activo || g.getAttribute("data-step") === "1"); });
+    groups.forEach(function (g) { var k = g.getAttribute("data-step"); g.classList.toggle("on", k === activo || k === "1"); });
     buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-s") === activo)); });
   }
   buttons.forEach(function (b) { b.addEventListener("click", function () { mostrar(b.getAttribute("data-s")); }); });
