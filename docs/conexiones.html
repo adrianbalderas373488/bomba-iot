@@ -80,7 +80,7 @@ ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
   </header>
 
   <section class="panel scroll" aria-label="Diagrama de conexiones">
-    <svg id="plano" viewBox="-200 -150 1280 700" role="img" aria-label="ESP32 entre dos protoboards con todos los componentes conectados">
+    <svg id="plano" viewBox="-80 -150 1160 700" role="img" aria-label="ESP32 entre dos protoboards con todos los componentes conectados">
       <rect class="board" x="40" y="90" width="320" height="406" rx="8"/>
       <rect class="board" x="540" y="90" width="320" height="406" rx="8"/>
       <text class="lbl-s" x="200" y="80" text-anchor="middle">Protoboard izquierda</text>
@@ -150,23 +150,24 @@ ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 
       <!-- 6. LEDs rojo y verde -->
       <g data-step="6">
-        <path class="wire" d="M252 304H230V249H-60" stroke="#a21caf"/>
-        <path class="wire" d="M252 326H230V381H-60" stroke="#4d7c0f"/>
-        <path class="wire gnd" d="M-90 262V282H60"/>
-        <path class="wire gnd" d="M-90 394V414H60"/>
-        <circle class="end" cx="252" cy="304" r="5" fill="#a21caf"/><circle class="end" cx="252" cy="326" r="5" fill="#4d7c0f"/>
-        <circle class="end gndf" cx="60" cy="282" r="5"/><circle class="end gndf" cx="60" cy="414" r="5"/>
-        <rect x="-32" y="242" width="34" height="14" rx="6" fill="#d9c9a3" stroke="#a8956a"/>
-        <rect x="-24" y="242" width="4" height="14" fill="#c0392b"/><rect x="-16" y="242" width="4" height="14" fill="#c0392b"/><rect x="-8" y="242" width="4" height="14" fill="#5b3a1a"/>
-        <rect x="-32" y="374" width="34" height="14" rx="6" fill="#d9c9a3" stroke="#a8956a"/>
-        <rect x="-24" y="374" width="4" height="14" fill="#c0392b"/><rect x="-16" y="374" width="4" height="14" fill="#c0392b"/><rect x="-8" y="374" width="4" height="14" fill="#5b3a1a"/>
-        <text x="-15" y="234" text-anchor="middle" class="lbl-s">220 Ω</text>
-        <text x="-15" y="366" text-anchor="middle" class="lbl-s">220 Ω</text>
-        <path d="M-77 249H-60M-77 381H-60" stroke="#888" stroke-width="2"/>
-        <circle cx="-90" cy="249" r="13" fill="#e0372b"/><circle cx="-90" cy="381" r="13" fill="#2fbf6a"/>
-        <text x="-70" y="240" class="lbl-s">+</text><text x="-70" y="372" class="lbl-s">+</text>
-        <text x="-112" y="253" text-anchor="end" class="lbl">LED rojo</text>
-        <text x="-112" y="385" text-anchor="end" class="lbl">LED verde</text>
+        <!-- resistencias cruzando el canal: de la fila del pin (columna f) a la otra mitad (columna e) -->
+        <path d="M252 304H208M252 326H208" stroke="#9a9a9a" stroke-width="2.5"/>
+        <rect x="214" y="298" width="32" height="12" rx="5" fill="#d9c9a3" stroke="#a8956a"/>
+        <rect x="220" y="298" width="3" height="12" fill="#c0392b"/><rect x="227" y="298" width="3" height="12" fill="#c0392b"/><rect x="234" y="298" width="3" height="12" fill="#5b3a1a"/>
+        <rect x="214" y="320" width="32" height="12" rx="5" fill="#d9c9a3" stroke="#a8956a"/>
+        <rect x="220" y="320" width="3" height="12" fill="#c0392b"/><rect x="227" y="320" width="3" height="12" fill="#c0392b"/><rect x="234" y="320" width="3" height="12" fill="#5b3a1a"/>
+        <circle cx="252" cy="304" r="4" fill="#9a9a9a"/><circle cx="208" cy="304" r="4" fill="#9a9a9a"/>
+        <circle cx="252" cy="326" r="4" fill="#9a9a9a"/><circle cx="208" cy="326" r="4" fill="#9a9a9a"/>
+        <!-- LEDs: pata larga en la columna b, pata corta doblada al riel − -->
+        <path d="M142 304H60M142 326H60" stroke="#9a9a9a" stroke-width="2.5"/>
+        <circle cx="142" cy="304" r="4" fill="#9a9a9a"/><circle cx="60" cy="304" r="4" fill="#9a9a9a"/>
+        <circle cx="142" cy="326" r="4" fill="#9a9a9a"/><circle cx="60" cy="326" r="4" fill="#9a9a9a"/>
+        <circle cx="101" cy="304" r="9" fill="#e0372b" stroke="#7a1d18"/>
+        <circle cx="101" cy="326" r="9" fill="#2fbf6a" stroke="#155f35"/>
+        <text x="148" y="293" class="lbl-s">larga</text>
+        <text x="30" y="308" text-anchor="end" class="lbl">LED rojo</text>
+        <text x="30" y="330" text-anchor="end" class="lbl">LED verde</text>
+        <text x="230" y="352" text-anchor="middle" class="lbl-s">220 Ω</text>
       </g>
 
       <!-- 7. OLED -->
@@ -206,7 +207,7 @@ ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
         <li><button data-s="3" aria-pressed="false"><span class="num">3</span><span><span class="sw" style="background:#7b4fd6"></span><b>Buzzer:</b> D23 → pata +; pata − → riel −<small>La pata + es la más larga, o la que tiene "+".</small></span></button></li>
         <li><button data-s="4" aria-pressed="false"><span class="num">4</span><span><span class="sw" style="background:#1f9d55"></span><b>Botón verde:</b> D19 → una pata; la otra → riel −<small>Si tiene 4 patas, usa dos en diagonal.</small></span></button></li>
         <li><button data-s="5" aria-pressed="false"><span class="num">5</span><span><span class="sw" style="background:#e86a10"></span><b>Botón rojo:</b> D18 → una pata; la otra → riel −<small>También dos patas en diagonal.</small></span></button></li>
-        <li><button data-s="6" aria-pressed="false"><span class="num">6</span><span><b>LEDs rojo y verde</b> (lado izquierdo)<small><span class="sw" style="background:#a21caf"></span>D25 → resistencia 220 Ω → pata larga del LED rojo<br><span class="sw" style="background:#4d7c0f"></span>D26 → resistencia 220 Ω → pata larga del LED verde<br><span class="sw" style="background:var(--gnd)"></span>Pata corta de cada LED → riel − izquierdo<br>El rojo parpadea con cada bip. El verde brilla más conforme desactivas.</small></span></button></li>
+        <li><button data-s="6" aria-pressed="false"><span class="num">6</span><span><b>LEDs rojo y verde</b> (lado izquierdo, sin cables)<small>LED rojo, en la fila de D25 (pin 8):<br>1. Resistencia de 220 Ω: de un hueco libre de la fila del pin, cruzando el canal del centro, a la misma fila del otro lado.<br>2. Pata larga del LED: en esa misma fila, del lado de afuera.<br>3. Pata corta: dóblala y métela al riel − izquierdo.<br>LED verde: igual, una fila abajo (D26, pin 9).<br>El rojo parpadea con cada bip. El verde brilla más conforme desactivas.</small></span></button></li>
         <li><button data-s="7" aria-pressed="false"><span class="num">7</span><span><b>Pantalla OLED</b> (4 cables, sigue los colores)<small><span class="sw" style="background:var(--gnd)"></span>GND → riel − derecho<br><span class="sw" style="background:#c2410c"></span>VCC → riel + derecho (3.3 V)<br><span class="sw" style="background:#0891b2"></span>SCL → D22<br><span class="sw" style="background:#db2777"></span>SDA → D21<br>Lee los nombres impresos en tu pantalla: en algunas el orden es VCC, GND.</small></span></button></li>
       </ol>
     </section>
@@ -272,7 +273,7 @@ ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
     <ol class="tips" style="margin-top:14px">
       <li>Primero arma y prueba todo en la mesa con el diagrama de arriba. Mete todo a la caja solo cuando ya funcione.</li>
       <li>Marca los agujeros en la tapa con lápiz, poniendo cada pieza encima, y córtalos con cúter un poco más chicos para que entren apretados.</li>
-      <li>Para lo que va en la tapa (botones, LEDs, OLED, buzzer) usa cables dupont macho-hembra de 20 cm. Así no tienes que soldar y alcanzan de la tapa a la protoboard.</li>
+      <li>Para lo que va en la tapa (botones, LEDs, OLED, buzzer) usa cables dupont macho-hembra de 20 cm. Así no tienes que soldar y alcanzan de la tapa a la protoboard. Si los LEDs van en la tapa, deja las resistencias en la protoboard, lleva un cable de cada resistencia a la pata larga de su LED, tuerce juntas las dos patas cortas y usa un solo cable al riel −.</li>
       <li>Pega la OLED por dentro con cinta doble cara o silicón frío, nunca con silicón caliente directo sobre los pines.</li>
       <li>Deja un hueco lateral para el cable USB: así puedes cargar programa nuevo y alimentar la bomba con el power bank sin abrir la caja.</li>
       <li>La "dinamita" puede ser de tubos de papel de baño pintados de rojo, con cinta negra y cables de colores sueltos de adorno (que no lleguen a la protoboard).</li>
@@ -296,7 +297,7 @@ ul.tips, ol.tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
   var izq = ["EN","VP","VN","D34","D35","D32","D33","D25","D26","D27","D14","D12","D13","GND","VIN"];
   var der = ["D23","D22","TX0","RX0","D21","D19","D18","D5","TX2","RX2","D4","D2","D15","GND","3V3"];
   var usadosDer = {"D23":"#7b4fd6","D22":"#0891b2","D21":"#db2777","D19":"#1f9d55","D18":"#e86a10","GND":"var(--gnd)","3V3":"#c2410c"};
-  var usadosIzq = {"D25":"#a21caf","D26":"#4d7c0f","GND":"var(--gnd)"};
+  var usadosIzq = {"D25":"#e0372b","D26":"#2fbf6a","GND":"var(--gnd)"};
   var pins = document.getElementById("pins");
   function pin(x, y, name, right) {
     el("rect", {x: x - 5, y: y - 5, width: 10, height: 10, rx: 2, fill: "var(--pin)"}, pins);
