@@ -60,7 +60,7 @@ Diagrama interactivo, con el montaje en la caja de cartón: [`docs/conexiones.ht
 |---|---|---|
 | D18 | 18 | Botón rojo → riel − (usa pull-up interno, no lleva resistencia) |
 | D19 | 19 | Botón verde → riel − |
-| D23 | 23 | Buzzer (+); el (−) al riel − |
+| D23 / D4 | 23 / 4 | Buzzer pasivo (+) / (−). Los dos pines vibran al revés: doble voltaje, más volumen |
 | D22 / D21 | 22 / 21 | SCL / SDA de la OLED |
 | D25 | 25 | 220 Ω → LED rojo (pata larga); pata corta al riel − |
 | D26 | 26 | 220 Ω → LED verde (pata larga); pata corta al riel − |

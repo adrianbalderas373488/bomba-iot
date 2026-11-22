@@ -20,7 +20,8 @@
 #define PIN_ARMAR       GPIO_NUM_18  // botón rojo a GND
 #define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
 #define PIN_BUZZER      GPIO_NUM_23  // buzzer pasivo (se le da tono con PWM)
-#define BUZZER_HZ       2700         // cerca de la resonancia de la mayoría: suena más fuerte
+#define PIN_BUZZER_2    GPIO_NUM_4   // otra pata del buzzer: vibra al revés que D23 = doble voltaje, más volumen
+#define BUZZER_HZ     2700         // cerca de la resonancia de la mayoría: suena más fuerte
 #define PIN_LED_ROJO    GPIO_NUM_25  // LED rojo + 220 ohm
 #define PIN_LED_VERDE   GPIO_NUM_26  // LED verde + 220 ohm (PWM: brilla más conforme se desactiva)
 #define PIN_SDA         GPIO_NUM_21  // OLED
@@ -331,6 +332,11 @@ void app_main(void)
     lc.channel = LEDC_CHANNEL_1;
     lc.timer_sel = LEDC_TIMER_1;
     ESP_ERROR_CHECK(ledc_channel_config(&lc));
+    lc.gpio_num = PIN_BUZZER_2;
+    lc.channel = LEDC_CHANNEL_2;
+    ESP_ERROR_CHECK(ledc_channel_config(&lc));
+    gpio_set_drive_capability(PIN_BUZZER, GPIO_DRIVE_CAP_3);  // corriente máxima del pin
+    gpio_set_drive_capability(PIN_BUZZER_2, GPIO_DRIVE_CAP_3);
 
     oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR);  // si no hay pantalla, solo avisa en el log
 
@@ -346,8 +352,12 @@ void app_main(void)
         int64_t armar = ms_presionado(&b_armar, t);
         int64_t desact = ms_presionado(&b_desact, t);
         juego_paso(t, armar, desact);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, t < buzzer_hasta ? 128 : 0);  // 50% = volumen máximo
+        // 50% en D23 y 50% desfasado medio ciclo en D4: el buzzer ve +3.3/-3.3 V. En silencio los dos en 0 V.
+        int duty = t < buzzer_hasta ? 128 : 0;
+        ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty, 0);
+        ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, duty, 128);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
         indicadores(t);
         pantalla(t, armar);
         telemetria(t);
