@@ -19,7 +19,8 @@
 // ---------- Pines ----------
 #define PIN_ARMAR       GPIO_NUM_18  // botón rojo a GND
 #define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
-#define PIN_BUZZER      GPIO_NUM_23  // buzzer activo
+#define PIN_BUZZER      GPIO_NUM_23  // buzzer pasivo (se le da tono con PWM)
+#define BUZZER_HZ       2700         // cerca de la resonancia de la mayoría: suena más fuerte
 #define PIN_LED_ROJO    GPIO_NUM_25  // LED rojo + 220 ohm
 #define PIN_LED_VERDE   GPIO_NUM_26  // LED verde + 220 ohm (PWM: brilla más conforme se desactiva)
 #define PIN_SDA         GPIO_NUM_21  // OLED
@@ -303,7 +304,7 @@ void app_main(void)
         .pull_up_en = GPIO_PULLUP_ENABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&entradas));
-    gpio_config_t salida = {.pin_bit_mask = (1ULL << PIN_BUZZER) | (1ULL << PIN_LED_ROJO), .mode = GPIO_MODE_OUTPUT};
+    gpio_config_t salida = {.pin_bit_mask = (1ULL << PIN_LED_ROJO), .mode = GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&salida));
 
     ledc_timer_config_t lt = {
@@ -322,6 +323,14 @@ void app_main(void)
         .duty = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&lc));
+    // Buzzer: su propio timer (otra frecuencia que el LED)
+    lt.timer_num = LEDC_TIMER_1;
+    lt.freq_hz = BUZZER_HZ;
+    ESP_ERROR_CHECK(ledc_timer_config(&lt));
+    lc.gpio_num = PIN_BUZZER;
+    lc.channel = LEDC_CHANNEL_1;
+    lc.timer_sel = LEDC_TIMER_1;
+    ESP_ERROR_CHECK(ledc_channel_config(&lc));
 
     oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR);  // si no hay pantalla, solo avisa en el log
 
@@ -337,7 +346,8 @@ void app_main(void)
         int64_t armar = ms_presionado(&b_armar, t);
         int64_t desact = ms_presionado(&b_desact, t);
         juego_paso(t, armar, desact);
-        gpio_set_level(PIN_BUZZER, t < buzzer_hasta);
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, t < buzzer_hasta ? 128 : 0);  // 50% = volumen máximo
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
         indicadores(t);
         pantalla(t, armar);
         telemetria(t);

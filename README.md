@@ -45,7 +45,7 @@ flowchart LR
 | ESP32 DevKit V1 (ESP32-WROOM-32) | 1 | |
 | Botón pulsador grande (rojo) | 1 | ARMAR |
 | Botón pulsador grande (verde) | 1 | DESACTIVAR |
-| Buzzer **activo** de 5 V o 3.3 V | 1 | Suena solo con darle voltaje |
+| Buzzer **pasivo** (placa visible por abajo) | 1 | El ESP32 le da el tono con PWM a 2.7 kHz. Uno activo de 5 V suena muy bajo con 3.3 V |
 | Pantalla OLED SSD1306 0.96" 128x64, I2C (4 pines) | 1 | Tiempo, estado y progreso |
 | LED rojo y LED verde de 5 mm | 2 | Rojo: bip; verde: progreso de desactivación |
 | Resistencia de 220 Ω | 2 | Una por LED |
