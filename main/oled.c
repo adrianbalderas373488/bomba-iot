@@ -120,6 +120,23 @@ void oled_barra(int y, int porcentaje)
     cuadro(6, y + 2, 116 * porcentaje / 100, 6, true);
 }
 
+void oled_circulo(int cx, int cy, int r)
+{
+    // círculo de punto medio: se calcula 1/8 y se refleja a los otros 7
+    for (int x = r, y = 0, err = 1 - r; x >= y;) {
+        int p[8][2] = {{x, y}, {y, x}, {-y, x}, {-x, y}, {-x, -y}, {-y, -x}, {y, -x}, {x, -y}};
+        for (int i = 0; i < 8; i++) cuadro(cx + p[i][0], cy + p[i][1], 1, 1, true);
+        y++;
+        if (err < 0) err += 2 * y + 1;
+        else { x--; err += 2 * (y - x) + 1; }
+    }
+}
+
+void oled_invertir(void)
+{
+    for (int i = 0; i < (int)sizeof fb; i++) fb[i] ^= 0xFF;
+}
+
 void oled_mostrar(void)
 {
     if (lista) esp_lcd_panel_draw_bitmap(panel, 0, 0, ANCHO, ALTO, fb);

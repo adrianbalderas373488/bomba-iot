@@ -7,4 +7,6 @@ void oled_limpiar(void);
 void oled_texto(int x, int y, int escala, const char *s);
 void oled_texto_centrado(int y, int escala, const char *s);
 void oled_barra(int y, int porcentaje);
+void oled_circulo(int cx, int cy, int r);
+void oled_invertir(void);  // blanco <-> negro en todo lo dibujado
 void oled_mostrar(void);

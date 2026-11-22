@@ -21,7 +21,7 @@
 #define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
 #define PIN_BUZZER      GPIO_NUM_23  // buzzer pasivo (se le da tono con PWM)
 #define PIN_BUZZER_2    GPIO_NUM_4   // otra pata del buzzer: vibra al revés que D23 = doble voltaje, más volumen
-#define BUZZER_HZ     2700         // cerca de la resonancia de la mayoría: suena más fuerte
+#define BUZZER_HZ     4000         // cerca de la resonancia de la mayoría: suena más fuerte
 #define PIN_LED_ROJO    GPIO_NUM_25  // LED rojo + 220 ohm
 #define PIN_LED_VERDE   GPIO_NUM_26  // LED verde + 220 ohm (PWM: brilla más conforme se desactiva)
 #define PIN_SDA         GPIO_NUM_21  // OLED
@@ -32,6 +32,7 @@
 #define T_PLANTAR_MS      3000
 #define T_BOMBA_MS        40000
 #define T_DESACTIVAR_MS   5000
+#define T_EXPLOSION_MS    3000  // duración de la animación, el sonido y el estrobo
 #define T_REBOTE_MS       30
 #define T_SOLTAR_MS       400   // el ruido del buzzer "suelta" el botón; el bip más largo dura 300 ms
 #define T_ENTRE_ENVIOS_MS 2200  // Adafruit IO gratis: máx 30 msg/min
@@ -202,7 +203,7 @@ static void cambiar_estado(estado_t e, int64_t t)
     case ESPERA:      tiempo_s = T_BOMBA_MS / 1000; progreso = 0; break;
     case PLANTADA:    t_ultimo_bip = t; buzzer_hasta = t + 300; break;
     case DESACTIVADA: progreso = 100; buzzer_hasta = t + 600; break;
-    case EXPLOTO:     tiempo_s = 0; progreso = 0; buzzer_hasta = t + 2000; break;
+    case EXPLOTO:     tiempo_s = 0; progreso = 0; break;  // el sonido lo hace buzzer()
     }
 }
 
@@ -237,6 +238,30 @@ static void juego_paso(int64_t t, int64_t armar, int64_t desact)
     }
 }
 
+// Bips normales a BUZZER_HZ; al explotar: "boom" que cae de agudo a grave y luego sirena
+static void buzzer(int64_t t)
+{
+    static uint32_t hz_actual = BUZZER_HZ;
+    uint32_t hz = BUZZER_HZ;
+    bool suena = t < buzzer_hasta;
+    if (estado == EXPLOTO) {
+        int64_t e = t - t_estado;
+        suena = e < T_EXPLOSION_MS;
+        if (e < 1200) hz = 3500 - e * 3100 / 1200;  // 3500 -> 400 Hz (menos de ~310 Hz el LEDC no llega)
+        else hz = (e / 250) % 2 ? 900 : 1500;
+    }
+    if (hz != hz_actual) {
+        ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1, hz);  // los dos canales comparten timer: siguen en contrafase
+        hz_actual = hz;
+    }
+    // 50% en D23 y 50% desfasado medio ciclo en D4: el buzzer ve +3.3/-3.3 V. En silencio los dos en 0 V.
+    int duty = suena ? 128 : 0;
+    ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty, 0);
+    ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, duty, 128);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
+}
+
 // LED rojo: parpadea con cada bip; LED verde: sube de brillo con el progreso de desactivación
 static void indicadores(int64_t t)
 {
@@ -245,7 +270,14 @@ static void indicadores(int64_t t)
     switch (estado) {
     case PLANTADA:    rojo = t < buzzer_hasta; verde = progreso * progreso * 255 / 10000; break;  // al cuadrado: el ojo lo ve lineal
     case DESACTIVADA: verde = 255; break;
-    case EXPLOTO:     rojo = t - t_estado >= 3000 || (t / 100) % 2; break;
+    case EXPLOTO:
+        if (t - t_estado < T_EXPLOSION_MS) {  // estrobo: rojo y verde alternados
+            rojo = ((t - t_estado) / 80) % 2;
+            verde = rojo ? 0 : 255;
+        } else {
+            rojo = true;
+        }
+        break;
     default: break;
     }
     gpio_set_level(PIN_LED_ROJO, rojo);
@@ -282,10 +314,24 @@ static void pantalla(int64_t t, int64_t armar)
         oled_texto_centrado(18, 3, "A SALVO");
         oled_texto_centrado(52, 1, "ROJO: OTRA RONDA");
         break;
-    case EXPLOTO:
-        oled_texto_centrado(18, 3, "BOOM!");
-        oled_texto_centrado(52, 1, "ROJO: OTRA RONDA");
+    case EXPLOTO: {
+        int64_t e = t - t_estado;
+        if (e < T_EXPLOSION_MS / 2) {  // ondas que crecen + pantalla parpadeando en negativo
+            oled_limpiar();
+            int r = e * 72 / (T_EXPLOSION_MS / 2);
+            oled_circulo(64, 32, r);
+            oled_circulo(64, 32, r * 2 / 3);
+            oled_circulo(64, 32, r / 3);
+            if ((e / 100) % 2) oled_invertir();
+        } else if (e < T_EXPLOSION_MS) {  // "BOOM!" temblando
+            oled_limpiar();
+            oled_texto(20 + ((e / 100) % 2 ? 3 : -3), 18 + ((e / 150) % 2 ? 2 : -2), 3, "BOOM!");
+        } else {
+            oled_texto_centrado(18, 3, "BOOM!");
+            oled_texto_centrado(52, 1, "ROJO: OTRA RONDA");
+        }
         break;
+    }
     }
     oled_mostrar();
 }
@@ -352,12 +398,7 @@ void app_main(void)
         int64_t armar = ms_presionado(&b_armar, t);
         int64_t desact = ms_presionado(&b_desact, t);
         juego_paso(t, armar, desact);
-        // 50% en D23 y 50% desfasado medio ciclo en D4: el buzzer ve +3.3/-3.3 V. En silencio los dos en 0 V.
-        int duty = t < buzzer_hasta ? 128 : 0;
-        ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty, 0);
-        ledc_set_duty_with_hpoint(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, duty, 128);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
+        buzzer(t);
         indicadores(t);
         pantalla(t, armar);
         telemetria(t);
