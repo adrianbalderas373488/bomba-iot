@@ -31,6 +31,7 @@
 #define T_BOMBA_MS        40000
 #define T_DESACTIVAR_MS   5000
 #define T_REBOTE_MS       30
+#define T_SOLTAR_MS       400   // el ruido del buzzer "suelta" el botón; el bip más largo dura 300 ms
 #define T_ENTRE_ENVIOS_MS 2200  // Adafruit IO gratis: máx 30 msg/min
 
 #define TOPIC(feed) AIO_USERNAME "/feeds/" feed
@@ -182,7 +183,7 @@ static int64_t ms_presionado(boton_t *b, int64_t t)
 {
     bool l = gpio_get_level(b->pin) == 0;
     if (l != b->lectura) { b->lectura = l; b->t_cambio = t; }
-    if (t - b->t_cambio >= T_REBOTE_MS && l != b->presionado) {
+    if (t - b->t_cambio >= (b->presionado ? T_SOLTAR_MS : T_REBOTE_MS) && l != b->presionado) {
         b->presionado = l; b->t_inicio = t;
         ESP_LOGI(TAG, "BTN,GPIO%d,%s", b->pin, l ? "presionado" : "suelto");
     }
