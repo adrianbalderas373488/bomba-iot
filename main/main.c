@@ -90,6 +90,9 @@ static void mqtt_evento(void *arg, esp_event_base_t base, int32_t id, void *data
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT conectado");
         esp_mqtt_client_subscribe_single(mqtt, TOPIC("bomba-cmd"), 0);
+        // Adafruit IO avisa aquí si rechaza un dato (feed inexistente, límite excedido...)
+        esp_mqtt_client_subscribe_single(mqtt, AIO_USERNAME "/errors", 0);
+        esp_mqtt_client_subscribe_single(mqtt, AIO_USERNAME "/throttle", 0);
         mqtt_conectado = true;
         break;
     case MQTT_EVENT_DISCONNECTED:
@@ -98,6 +101,10 @@ static void mqtt_evento(void *arg, esp_event_base_t base, int32_t id, void *data
         break;
     case MQTT_EVENT_DATA: {
         comando_t c;
+        if (e->topic_len < 9 || memcmp(e->topic + e->topic_len - 9, "bomba-cmd", 9)) {
+            ESP_LOGE(TAG, "Adafruit IO: %.*s", e->data_len, e->data);
+            break;
+        }
         if (e->data_len == 5 && !memcmp(e->data, "armar", 5)) c = CMD_ARMAR;
         else if (e->data_len == 9 && !memcmp(e->data, "reiniciar", 9)) c = CMD_REINICIAR;
         else break;  // cualquier otro valor se ignora (p. ej. el "release" del botón)
@@ -150,10 +157,12 @@ static void telemetria(int64_t t)
     } else if (progreso != progreso_env) {
         snprintf(v, sizeof v, "%d", progreso);
         if (!publicar(TOPIC("bomba-progreso"), v, 0)) return;
+        ESP_LOGI(TAG, "PUB progreso=%s", v);
         progreso_env = progreso;
     } else if (tiempo_s != tiempo_env) {
         snprintf(v, sizeof v, "%d", tiempo_s);
         if (!publicar(TOPIC("bomba-tiempo"), v, 0)) return;
+        ESP_LOGI(TAG, "PUB tiempo=%s", v);
         tiempo_env = tiempo_s;
     } else {
         return;
@@ -173,7 +182,10 @@ static int64_t ms_presionado(boton_t *b, int64_t t)
 {
     bool l = gpio_get_level(b->pin) == 0;
     if (l != b->lectura) { b->lectura = l; b->t_cambio = t; }
-    if (t - b->t_cambio >= T_REBOTE_MS && l != b->presionado) { b->presionado = l; b->t_inicio = t; }
+    if (t - b->t_cambio >= T_REBOTE_MS && l != b->presionado) {
+        b->presionado = l; b->t_inicio = t;
+        ESP_LOGI(TAG, "BTN,GPIO%d,%s", b->pin, l ? "presionado" : "suelto");
+    }
     return b->presionado ? t - b->t_inicio + 1 : 0;
 }
 
