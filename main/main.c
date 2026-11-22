@@ -13,7 +13,6 @@
 #include "esp_crt_bundle.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
-#include "led_strip.h"
 #include "oled.h"
 #include "config.h"  // copia config.example.h -> config.h (no se sube a git)
 
@@ -21,8 +20,6 @@
 #define PIN_ARMAR       GPIO_NUM_18  // botón rojo a GND
 #define PIN_DESACTIVAR  GPIO_NUM_19  // botón verde a GND
 #define PIN_BUZZER      GPIO_NUM_23  // buzzer activo
-#define PIN_LEDS        GPIO_NUM_16  // DIN de la tira WS2812 (RX2)
-#define NUM_LEDS        8
 #define PIN_LED_ROJO    GPIO_NUM_25  // LED rojo + 220 ohm
 #define PIN_LED_VERDE   GPIO_NUM_26  // LED verde + 220 ohm (PWM: brilla más conforme se desactiva)
 #define PIN_SDA         GPIO_NUM_21  // OLED
@@ -47,7 +44,6 @@ typedef enum { CMD_ARMAR, CMD_REINICIAR } comando_t;
 static esp_mqtt_client_handle_t mqtt;
 static volatile bool mqtt_conectado = false;
 static QueueHandle_t cola_cmd;  // comandos de la nube -> tarea del juego
-static led_strip_handle_t leds;
 
 // Estado del juego (solo lo toca el bucle principal)
 static estado_t estado;
@@ -224,37 +220,6 @@ static void juego_paso(int64_t t, int64_t armar, int64_t desact)
     }
 }
 
-static void llenar(int n, uint8_t r, uint8_t g, uint8_t b)
-{
-    for (int i = 0; i < NUM_LEDS; i++) {
-        if (i < n) led_strip_set_pixel(leds, i, r, g, b);
-        else led_strip_set_pixel(leds, i, 0, 0, 0);
-    }
-}
-
-static void dibujar(int64_t t, int64_t armar)
-{
-    switch (estado) {
-    case ESPERA:  // naranja = progreso de plantado; 1 verde = lista
-        if (armar) llenar(armar * NUM_LEDS / T_PLANTAR_MS, 50, 20, 0);
-        else llenar(1, 0, 15, 0);
-        break;
-    case PLANTADA:  // azul = progreso de desactivación; rojo = tiempo restante
-        if (progreso) llenar(progreso * NUM_LEDS / 100, 0, 0, 60);
-        else llenar((tiempo_s * NUM_LEDS + T_BOMBA_MS / 1000 - 1) / (T_BOMBA_MS / 1000),
-                    t < buzzer_hasta ? 80 : 15, 0, 0);
-        break;
-    case DESACTIVADA:
-        llenar(NUM_LEDS, 0, 60, 0);
-        break;
-    case EXPLOTO:  // destello 3 s, luego rojo fijo
-        if (t - t_estado < 3000 && (t / 100) % 2) llenar(NUM_LEDS, 60, 60, 60);
-        else llenar(NUM_LEDS, 80, 0, 0);
-        break;
-    }
-    led_strip_refresh(leds);
-}
-
 // LED rojo: parpadea con cada bip; LED verde: sube de brillo con el progreso de desactivación
 static void indicadores(int64_t t)
 {
@@ -345,14 +310,6 @@ void app_main(void)
 
     oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR);  // si no hay pantalla, solo avisa en el log
 
-    led_strip_config_t sc = {
-        .strip_gpio_num = PIN_LEDS,
-        .max_leds = NUM_LEDS,
-        .led_pixel_format = LED_PIXEL_FORMAT_GRB,
-        .led_model = LED_MODEL_WS2812,
-    };
-    led_strip_rmt_config_t rc = {.clk_src = RMT_CLK_SRC_DEFAULT, .resolution_hz = 10 * 1000 * 1000};
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&sc, &rc, &leds));
 
     cola_cmd = xQueueCreate(4, sizeof(comando_t));
     wifi_iniciar();
@@ -366,7 +323,6 @@ void app_main(void)
         int64_t desact = ms_presionado(&b_desact, t);
         juego_paso(t, armar, desact);
         gpio_set_level(PIN_BUZZER, t < buzzer_hasta);
-        dibujar(t, armar);
         indicadores(t);
         pantalla(t, armar);
         telemetria(t);
