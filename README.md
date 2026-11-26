@@ -69,6 +69,46 @@ Diagrama interactivo, con el montaje en la caja de cartón: [`docs/conexiones.ht
 
 Si la OLED muestra el texto de cabeza, cambia `OLED_GIRAR` a `true` en `main/main.c`. Si no hay pantalla conectada, la bomba funciona igual y solo lo avisa en el monitor serie.
 
+## Diagnosticar una OLED que no enciende
+
+Al arrancar, antes del juego y de la red, se revisan SDA/SCL, se escanea el bus
+I2C y se elige automaticamente `0x3C` o `0x3D`. Se usa 100 kHz para facilitar
+la prueba con cables y protoboard. Si responde, se muestra blanco (2 s), negro
+(1 s) y un marco con `OLED / PRUEBA I2C` (3 s). Despues inicia el juego.
+
+Para aislar la pantalla, cambia `OLED_SOLO_DIAGNOSTICO` a `true` en
+`main/main.c`, compila y flashea. Repite el diagnostico con una pausa de 5 s,
+sin iniciar el juego, buzzer, WiFi ni MQTT. Devuelve la opcion a `false` cuando
+termines. Apaga el ESP32 antes de cambiar cables.
+
+En una terminal ESP-IDF, dentro de `bomba_iot`:
+
+```bash
+idf.py build
+idf.py -p COM3 flash monitor
+```
+
+Cambia `COM3` por tu puerto. Busca los mensajes con etiqueta `oled`:
+
+| Resultado | Interpretacion y siguiente revision |
+|---|---|
+| `Bus en reposo: SDA=0` o `SCL=0` | Una linea esta retenida en bajo: revisar corto a GND, cableado, alimentacion y pull-ups. |
+| `SIN OLED en 0x3C/0x3D` | No respondio en esas direcciones: verificar VCC a 3V3, GND comun, SDA a D21 y SCL a D22, segun las etiquetas del modulo. Comprobar jumpers y cortes en los rieles de la protoboard. |
+| `ESP_ERR_TIMEOUT` durante el escaneo | El bus no pudo completar la prueba: revisar SDA/SCL y pull-ups a 3V3. |
+| `ACK: dispositivo en 0x3D` | Se encontro una direccion alternativa y se selecciona automaticamente. |
+| `FALLO: ... -> ...` | Indica el paso y el error exactos: crear bus, crear controlador, inicializar, encender o enviar imagen. |
+| `Envios de prueba OK`, pero sigue negra | Hubo respuesta I2C y los envios terminaron sin error; no confirma que los pixeles funcionen. Medir alimentacion en el modulo y verificar que sea SSD1306 128x64: un SH1106 necesita otro controlador. |
+| Se ven blanco, negro y texto | La pantalla puede mostrar imagenes con esta configuracion. Si falla despues, revisar el error de envio y posibles falsos contactos o caidas de alimentacion. |
+
+Una lectura SDA=SCL=1 tampoco confirma que los cables lleguen a la pantalla:
+los pull-ups internos pueden mantener los GPIO en alto aunque este desconectada.
+El software no puede identificar por si solo un jumper roto o medir VCC;
+para eso hay que revisar continuidad con el circuito apagado y medir el voltaje
+entre VCC y GND del modulo mientras esta alimentado.
+
+Referencia de los resultados del escaneo:
+[ESP-IDF v5.5: I2C master probe](https://docs.espressif.com/projects/esp-idf/en/release-v5.5/esp32/api-reference/peripherals/i2c.html#_CPPv416i2c_master_probe23i2c_master_bus_handle_t8uint16_ti).
+
 ## Compilar y flashear
 
 Requisitos: ESP-IDF **v5.5** (extensión de VS Code o terminal "ESP-IDF").

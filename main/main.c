@@ -27,6 +27,7 @@
 #define PIN_SDA         GPIO_NUM_21  // OLED
 #define PIN_SCL         GPIO_NUM_22  // OLED
 #define OLED_GIRAR      false        // ponlo en true si el texto se ve de cabeza
+#define OLED_SOLO_DIAGNOSTICO false  // true: repetir prueba sin iniciar juego, WiFi ni MQTT
 
 // ---------- Tiempos (ms) ----------
 #define T_PLANTAR_MS      3000
@@ -288,7 +289,7 @@ static void indicadores(int64_t t)
 static void pantalla(int64_t t, int64_t armar)
 {
     static int64_t t_pantalla;
-    if (t - t_pantalla < 100) return;  // 10 cuadros/s; cada envío por I2C tarda ~25 ms
+    if (t - t_pantalla < 100) return;  // hasta 10 cuadros/s; envio I2C a 100 kHz ~95 ms
     t_pantalla = t;
     char s[24];
     oled_limpiar();
@@ -338,6 +339,17 @@ static void pantalla(int64_t t, int64_t armar)
 
 void app_main(void)
 {
+    // Diagnostico antes de NVS/red/perifericos: una falla de ellos no oculta la OLED.
+    if (OLED_SOLO_DIAGNOSTICO) {
+        ESP_LOGW(TAG, "Modo SOLO OLED: prueba cada 5 s; juego, buzzer y red sin iniciar");
+        while (1) {
+            if (oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR)) oled_prueba();
+            ESP_LOGI(TAG, "Nueva prueba OLED en 5 segundos; apaga antes de cambiar cables");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+        }
+    }
+    if (oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR)) oled_prueba();
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -383,9 +395,6 @@ void app_main(void)
     ESP_ERROR_CHECK(ledc_channel_config(&lc));
     gpio_set_drive_capability(PIN_BUZZER, GPIO_DRIVE_CAP_3);  // corriente máxima del pin
     gpio_set_drive_capability(PIN_BUZZER_2, GPIO_DRIVE_CAP_3);
-
-    oled_iniciar(PIN_SDA, PIN_SCL, OLED_GIRAR);  // si no hay pantalla, solo avisa en el log
-
 
     cola_cmd = xQueueCreate(4, sizeof(comando_t));
     wifi_iniciar();

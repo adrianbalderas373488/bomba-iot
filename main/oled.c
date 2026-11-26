@@ -1,6 +1,9 @@
 #include <ctype.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -10,10 +13,12 @@
 
 #define ANCHO 128
 #define ALTO 64
-#define DIR_OLED 0x3C
+#define I2C_HZ 100000  // velocidad conservadora para diagnosticar cables/protoboard
 
 static const char *TAG = "oled";
 static esp_lcd_panel_handle_t panel;
+static i2c_master_bus_handle_t bus;
+static esp_lcd_panel_io_handle_t io;
 static bool lista = false;
 static uint8_t fb[ANCHO * ALTO / 8];  // formato del SSD1306: cada byte = 8 pixeles verticales
 
@@ -43,9 +48,29 @@ static const uint8_t FUENTE[][5] = {
     {0x07, 0x08, 0x70, 0x08, 0x07}, {0x61, 0x51, 0x49, 0x45, 0x43},                                 // Y Z
 };
 
+static bool comprobar(esp_err_t err, const char *paso)
+{
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "OK: %s", paso);
+        return true;
+    }
+    ESP_LOGE(TAG, "FALLO: %s -> %s (0x%x)", paso, esp_err_to_name(err), (unsigned int)err);
+    return false;
+}
+
+static void liberar(void)
+{
+    lista = false;
+    if (panel) { esp_lcd_panel_del(panel); panel = NULL; }
+    if (io) { esp_lcd_panel_io_del(io); io = NULL; }
+    if (bus) { i2c_del_master_bus(bus); bus = NULL; }
+}
+
 bool oled_iniciar(int sda, int scl, bool girar)
 {
-    i2c_master_bus_handle_t bus;
+    liberar();
+    ESP_LOGI(TAG, "=== DIAGNOSTICO OLED: SDA=GPIO%d SCL=GPIO%d, %d Hz ===", sda, scl, I2C_HZ);
+    ESP_LOGI(TAG, "Cableado esperado: VCC->3V3, GND->GND; verifica las etiquetas del modulo");
     i2c_master_bus_config_t bc = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = sda,
@@ -54,15 +79,45 @@ bool oled_iniciar(int sda, int scl, bool girar)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-    if (i2c_new_master_bus(&bc, &bus) != ESP_OK) return false;
-    if (i2c_master_probe(bus, DIR_OLED, 50) != ESP_OK) {
-        ESP_LOGW(TAG, "No se encontro la OLED en 0x3C; la bomba sigue sin pantalla");
-        return false;
+    if (!comprobar(i2c_new_master_bus(&bc, &bus), "crear bus I2C")) goto fallo;
+    // El controlador configura los pines como open-drain; habilitar su lectura
+    // permite comprobar si alguna linea permanece en bajo estando en reposo.
+    if (!comprobar(gpio_input_enable(sda), "habilitar lectura SDA") ||
+        !comprobar(gpio_input_enable(scl), "habilitar lectura SCL")) goto fallo;
+    vTaskDelay(pdMS_TO_TICKS(200));  // estabilizacion de alimentacion de la pantalla
+    int nivel_sda = gpio_get_level(sda), nivel_scl = gpio_get_level(scl);
+    ESP_LOGI(TAG, "Bus en reposo: SDA=%d SCL=%d (se espera 1 y 1)", nivel_sda, nivel_scl);
+    if (!nivel_sda || !nivel_scl) {
+        ESP_LOGE(TAG, "Linea en bajo: revisar corto a GND, cableado, alimentacion y pull-ups");
+        goto fallo;
     }
-    esp_lcd_panel_io_handle_t io;
+
+    int direccion = -1, encontrados = 0;
+    ESP_LOGI(TAG, "Escaneando direcciones I2C 0x08..0x77...");
+    for (int dir = 0x08; dir <= 0x77; dir++) {
+        esp_err_t err = i2c_master_probe(bus, dir, 50);
+        if (err == ESP_OK) {
+            encontrados++;
+            ESP_LOGI(TAG, "ACK: dispositivo en 0x%02X%s", dir,
+                     (dir == 0x3C || dir == 0x3D) ? " (posible OLED)" : "");
+            if (direccion < 0 && (dir == 0x3C || dir == 0x3D)) direccion = dir;
+        } else if (err != ESP_ERR_NOT_FOUND) {
+            comprobar(err, "escanear bus I2C");
+            ESP_LOGE(TAG, "Error al probar 0x%02X; revisar SDA/SCL y pull-ups a 3V3", dir);
+            goto fallo;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (direccion < 0) {
+        ESP_LOGE(TAG, "SIN OLED en 0x3C/0x3D; dispositivos encontrados: %d", encontrados);
+        ESP_LOGE(TAG, "Revisar 3V3-GND en el modulo, tierra comun, SDA/SCL y continuidad de jumpers/rieles");
+        ESP_LOGW(TAG, "SDA=SCL=1 no prueba continuidad ni alimentacion: los pull-ups internos tambien las elevan");
+        goto fallo;
+    }
+    ESP_LOGI(TAG, "Usando 0x%02X; un ACK confirma respuesta I2C, no el modelo ni los pixeles", direccion);
     esp_lcd_panel_io_i2c_config_t ioc = {
-        .dev_addr = DIR_OLED,
-        .scl_speed_hz = 400000,
+        .dev_addr = direccion,
+        .scl_speed_hz = I2C_HZ,
         .control_phase_bytes = 1,
         .dc_bit_offset = 6,
         .lcd_cmd_bits = 8,
@@ -70,17 +125,19 @@ bool oled_iniciar(int sda, int scl, bool girar)
     };
     esp_lcd_panel_ssd1306_config_t sc = {.height = ALTO};
     esp_lcd_panel_dev_config_t pc = {.bits_per_pixel = 1, .reset_gpio_num = -1, .vendor_config = &sc};
-    if (esp_lcd_new_panel_io_i2c(bus, &ioc, &io) != ESP_OK ||
-        esp_lcd_new_panel_ssd1306(io, &pc, &panel) != ESP_OK ||
-        esp_lcd_panel_reset(panel) != ESP_OK ||
-        esp_lcd_panel_init(panel) != ESP_OK) {
-        ESP_LOGW(TAG, "Fallo al iniciar la OLED; la bomba sigue sin pantalla");
-        return false;
-    }
-    if (girar) esp_lcd_panel_mirror(panel, true, true);
-    esp_lcd_panel_disp_on_off(panel, true);
+    if (!comprobar(esp_lcd_new_panel_io_i2c(bus, &ioc, &io), "crear IO de pantalla") ||
+        !comprobar(esp_lcd_new_panel_ssd1306(io, &pc, &panel), "crear controlador SSD1306") ||
+        !comprobar(esp_lcd_panel_reset(panel), "reset de pantalla") ||
+        !comprobar(esp_lcd_panel_init(panel), "inicializar SSD1306")) goto fallo;
+    if (girar && !comprobar(esp_lcd_panel_mirror(panel, true, true), "girar pantalla")) goto fallo;
+    if (!comprobar(esp_lcd_panel_disp_on_off(panel, true), "encender pantalla")) goto fallo;
     lista = true;
     return true;
+
+fallo:
+    liberar();
+    ESP_LOGW(TAG, "OLED no disponible; consulta arriba el paso que fallo");
+    return false;
 }
 
 void oled_limpiar(void) { memset(fb, 0, sizeof fb); }
@@ -137,7 +194,37 @@ void oled_invertir(void)
     for (int i = 0; i < (int)sizeof fb; i++) fb[i] ^= 0xFF;
 }
 
-void oled_mostrar(void)
+bool oled_mostrar(void)
 {
-    if (lista) esp_lcd_panel_draw_bitmap(panel, 0, 0, ANCHO, ALTO, fb);
+    if (!lista) return false;
+    esp_err_t err = esp_lcd_panel_draw_bitmap(panel, 0, 0, ANCHO, ALTO, fb);
+    if (err != ESP_OK) {
+        comprobar(err, "enviar imagen a OLED");
+        ESP_LOGE(TAG, "Se detienen los envios; revisar falso contacto/alimentacion y reiniciar");
+        lista = false;  // evita saturar el monitor con el mismo error cada 100 ms
+        return false;
+    }
+    return true;
+}
+
+bool oled_prueba(void)
+{
+    if (!lista) return false;
+    ESP_LOGI(TAG, "PRUEBA 1/3: pantalla BLANCA durante 2 segundos");
+    memset(fb, 0xFF, sizeof fb);
+    if (!oled_mostrar()) return false;
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGI(TAG, "PRUEBA 2/3: pantalla NEGRA durante 1 segundo");
+    oled_limpiar();
+    if (!oled_mostrar()) return false;
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "PRUEBA 3/3: marco y texto OLED / PRUEBA I2C durante 3 segundos");
+    cuadro(0, 0, ANCHO, ALTO, false);
+    oled_texto_centrado(12, 3, "OLED");
+    oled_texto_centrado(44, 1, "PRUEBA I2C");
+    if (!oled_mostrar()) return false;
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    ESP_LOGI(TAG, "Envios de prueba OK. Confirma visualmente si viste los tres patrones");
+    ESP_LOGW(TAG, "Si sigue negra: verificar voltaje en VCC/GND y modelo SSD1306 128x64 (SH1106 requiere otro driver)");
+    return true;
 }
